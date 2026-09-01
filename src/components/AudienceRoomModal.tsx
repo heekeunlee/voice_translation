@@ -52,7 +52,7 @@ export const AudienceRoomModal: React.FC<AudienceRoomModalProps> = ({
           </div>
           <div>
             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              청중 실시간 자막 화면 공유 (Flitto Live)
+              청중 실시간 다국어 자막 화면 공유 (Live Broadcast)
             </h2>
             <p className="text-xs text-gray-500">발표자의 음성을 청중이 자신의 스마트폰이나 노트북에서 자국어 자막으로 봅니다.</p>
           </div>

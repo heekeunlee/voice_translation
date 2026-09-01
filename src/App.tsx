@@ -299,7 +299,7 @@ export function App() {
         <p className="flex items-center justify-center gap-2">
           <span className="font-semibold text-gray-700">PolyVoice Live AI</span>
           <span>•</span>
-          <span>Flitto Style Real-Time Voice Translation & English Learning</span>
+          <span>AI Real-Time Voice Translation & English Learning</span>
           <span>•</span>
           <span>Powered by Gemini 2.0 Flash</span>
         </p>

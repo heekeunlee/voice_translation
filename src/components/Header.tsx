@@ -53,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
                 PolyVoice <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-semibold border border-indigo-200">LIVE</span>
               </span>
             </div>
-            <p className="text-[11px] text-gray-400 font-medium">플리토 스타일 실시간 통번역 & 영어 학습 AI</p>
+            <p className="text-[11px] text-gray-400 font-medium">초저지연 실시간 AI 통번역 & 영어 학습</p>
           </div>
         </div>
 

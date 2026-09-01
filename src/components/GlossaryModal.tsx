@@ -76,7 +76,7 @@ export const GlossaryModal: React.FC<GlossaryModalProps> = ({
             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
               전문 용어집 및 번역 메모리 (Glossary & TM)
             </h2>
-            <p className="text-xs text-gray-500">플리토처럼 고유명사나 특정 분야 용어를 사전에 등록하여 번역 시 강제 고정합니다.</p>
+            <p className="text-xs text-gray-500">고유명사나 특정 분야 전문 용어를 사전에 등록하여 번역 시 정확하게 강제 고정합니다.</p>
           </div>
         </div>
 

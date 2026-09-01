@@ -196,7 +196,7 @@ export const LivePresenter: React.FC<LivePresenterProps> = ({
                   </span>
                 ) : (
                   <span className="text-gray-300 font-normal italic text-sm">
-                    플리토처럼 초고속으로 번역된 문장이 여기에 실시간 타이핑됩니다.
+                    말씀하시면 AI가 초고속으로 번역하여 여기에 실시간 타이핑됩니다.
                   </span>
                 )}
               </div>
@@ -243,7 +243,7 @@ export const LivePresenter: React.FC<LivePresenterProps> = ({
             </button>
           </div>
           <p className="mt-3 text-xs text-gray-400 font-medium">
-            {isListening ? '말씀하시면 플리토 엔진처럼 실시간으로 정제되어 타이핑 번역됩니다.' : '마이크 버튼을 클릭하고 한국어 또는 영어로 말해보세요.'}
+            {isListening ? '말씀하시면 실시간으로 정제되어 초고속 타이핑 번역됩니다.' : '마이크 버튼을 클릭하고 한국어 또는 영어로 말해보세요.'}
           </p>
         </div>
       </div>
