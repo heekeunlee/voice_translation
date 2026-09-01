@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/voice_translation/',
   plugins: [
     react(),
     tailwindcss(),
