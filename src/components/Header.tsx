@@ -39,7 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
   savedCardsCount,
 }) => {
   return (
-    <header className="sticky top-0 z-30 w-full border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 w-full border-b border-gray-200 bg-white/80 backdrop-blur-xl shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
         {/* Brand */}
@@ -49,20 +49,20 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-lg tracking-tight text-white flex items-center gap-1.5">
-                PolyVoice <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 font-semibold border border-indigo-500/30">LIVE</span>
+              <span className="font-bold text-lg tracking-tight text-gray-900 flex items-center gap-1.5">
+                PolyVoice <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-semibold border border-indigo-200">LIVE</span>
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-medium">플리토 스타일 실시간 통번역 & 영어 학습 AI</p>
+            <p className="text-[11px] text-gray-400 font-medium">플리토 스타일 실시간 통번역 & 영어 학습 AI</p>
           </div>
         </div>
 
         {/* Center: Language Switcher */}
-        <div className="flex items-center gap-2 bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800 shadow-inner">
+        <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-2xl border border-gray-200 shadow-inner">
           <select
             value={sourceLang}
             onChange={(e) => onSourceLangChange(e.target.value)}
-            className="bg-slate-800 text-slate-200 text-xs sm:text-sm font-medium rounded-xl px-3 py-1.5 outline-none border border-slate-700 hover:border-slate-600 transition cursor-pointer"
+            className="bg-white text-gray-700 text-xs sm:text-sm font-medium rounded-xl px-3 py-1.5 outline-none border border-gray-200 hover:border-gray-300 transition cursor-pointer"
           >
             {SUPPORTED_LANGUAGES.map((l: LanguageOption) => (
               <option key={l.code} value={l.speechCode}>
@@ -74,7 +74,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onSwapLanguages}
             title="언어 전환"
-            className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-indigo-400 transition"
+            className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-indigo-500 transition"
           >
             <ArrowRightLeft className="w-4 h-4" />
           </button>
@@ -82,7 +82,7 @@ export const Header: React.FC<HeaderProps> = ({
           <select
             value={targetLang}
             onChange={(e) => onTargetLangChange(e.target.value)}
-            className="bg-slate-800 text-slate-200 text-xs sm:text-sm font-medium rounded-xl px-3 py-1.5 outline-none border border-slate-700 hover:border-slate-600 transition cursor-pointer"
+            className="bg-white text-gray-700 text-xs sm:text-sm font-medium rounded-xl px-3 py-1.5 outline-none border border-gray-200 hover:border-gray-300 transition cursor-pointer"
           >
             {SUPPORTED_LANGUAGES.map((l: LanguageOption) => (
               <option key={l.code} value={l.speechCode}>
@@ -92,35 +92,18 @@ export const Header: React.FC<HeaderProps> = ({
           </select>
         </div>
 
-        {/* Right Tools & Modals */}
+        {/* Right Tools */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Audience Share */}
-          <button
-            onClick={onOpenAudienceRoom}
-            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition"
-            title="청중 실시간 자막 화면 (QR 공유)"
-          >
-            <QrCode className="w-4 h-4 text-emerald-400" />
+          <button onClick={onOpenAudienceRoom} className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 text-xs font-medium transition" title="청중 실시간 자막 화면 (QR 공유)">
+            <QrCode className="w-4 h-4 text-emerald-500" />
             <span>청중 공유</span>
           </button>
-
-          {/* Glossary */}
-          <button
-            onClick={onOpenGlossary}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition"
-            title="전문 용어집 및 번역 메모리(TM)"
-          >
-            <BookOpen className="w-4 h-4 text-purple-400" />
+          <button onClick={onOpenGlossary} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 text-xs font-medium transition" title="전문 용어집 및 번역 메모리(TM)">
+            <BookOpen className="w-4 h-4 text-purple-500" />
             <span className="hidden sm:inline">용어집</span>
           </button>
-
-          {/* Flashcards / Study */}
-          <button
-            onClick={onOpenFlashcards}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition"
-            title="영어 단어장 & 섀도잉 학습"
-          >
-            <BookMarked className="w-4 h-4 text-pink-400" />
+          <button onClick={onOpenFlashcards} className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 text-xs font-medium transition" title="영어 단어장 & 섀도잉 학습">
+            <BookMarked className="w-4 h-4 text-pink-500" />
             <span className="hidden sm:inline">학습 단어장</span>
             {savedCardsCount > 0 && (
               <span className="ml-1 px-1.5 py-0.2 rounded-full bg-pink-500 text-[10px] text-white font-bold animate-pulse">
@@ -128,26 +111,13 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             )}
           </button>
-
-          {/* Export */}
-          <button
-            onClick={onOpenExport}
-            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition"
-            title="대화 및 번역본 내보내기"
-          >
+          <button onClick={onOpenExport} className="p-2 rounded-xl bg-white hover:bg-gray-50 text-gray-400 hover:text-gray-600 border border-gray-200 transition" title="대화 및 번역본 내보내기">
             <Download className="w-4 h-4" />
           </button>
-
-          {/* Settings */}
-          <button
-            onClick={onOpenSettings}
-            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-indigo-400 border border-slate-800 transition"
-            title="엔진 및 API 설정"
-          >
+          <button onClick={onOpenSettings} className="p-2 rounded-xl bg-white hover:bg-gray-50 text-gray-400 hover:text-indigo-500 border border-gray-200 transition" title="엔진 및 API 설정">
             <Settings className="w-4 h-4" />
           </button>
         </div>
-
       </div>
     </header>
   );

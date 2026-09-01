@@ -2,8 +2,8 @@ import React from 'react';
 
 interface LiveWaveVisualizerProps {
   isListening: boolean;
-  audioLevel: number; // 0 ~ 100
-  audioFrequencies: number[]; // array of 24 numbers (0~100)
+  audioLevel: number;
+  audioFrequencies: number[];
 }
 
 export const LiveWaveVisualizer: React.FC<LiveWaveVisualizerProps> = ({
@@ -12,9 +12,8 @@ export const LiveWaveVisualizer: React.FC<LiveWaveVisualizerProps> = ({
   audioFrequencies,
 }) => {
   return (
-    <div className="flex items-center gap-1 h-8 px-3 py-1 bg-slate-900/80 rounded-full border border-slate-800">
+    <div className="flex items-center gap-1 h-8 px-3 py-1 bg-gray-100 rounded-full border border-gray-200">
       {audioFrequencies.slice(0, 16).map((freq, idx) => {
-        // Height calculation with minimum baseline when listening
         const heightPercent = isListening 
           ? Math.max(15, Math.min(100, (freq * 0.8) + (audioLevel * 0.4)))
           : 15;
@@ -24,8 +23,8 @@ export const LiveWaveVisualizer: React.FC<LiveWaveVisualizerProps> = ({
             key={idx}
             className={`w-1 rounded-full transition-all duration-75 ${
               isListening
-                ? 'bg-gradient-to-t from-indigo-500 via-purple-500 to-pink-400 shadow-sm shadow-indigo-500/50'
-                : 'bg-slate-700'
+                ? 'bg-gradient-to-t from-indigo-500 via-purple-500 to-pink-400 shadow-sm shadow-indigo-500/30'
+                : 'bg-gray-300'
             }`}
             style={{
               height: `${heightPercent}%`,

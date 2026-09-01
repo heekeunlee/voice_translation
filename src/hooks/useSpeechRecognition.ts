@@ -60,7 +60,7 @@ export function useSpeechRecognition({
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
   const [isSupported, setIsSupported] = useState(true);
-  const [audioLevel, setAudioLevel] = useState(0); // 0 ~ 100
+  const [audioLevel, setAudioLevel] = useState(0);
   const [audioFrequencies, setAudioFrequencies] = useState<number[]>(new Array(24).fill(0));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -70,11 +70,18 @@ export function useSpeechRecognition({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ★ FIX: Use refs for callbacks to avoid stale closures
+  const onFinalTranscriptRef = useRef(onFinalTranscript);
+  const onInterimTranscriptRef = useRef(onInterimTranscript);
+  onFinalTranscriptRef.current = onFinalTranscript;
+  onInterimTranscriptRef.current = onInterimTranscript;
 
   const langRef = useRef(lang);
   langRef.current = lang;
 
-  // Initialize Web Speech API
+  // Initialize Web Speech API (runs once)
   useEffect(() => {
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionClass) {
@@ -83,7 +90,7 @@ export function useSpeechRecognition({
       return;
     }
 
-    try {
+    const createRecognition = () => {
       const recognition = new SpeechRecognitionClass();
       recognition.continuous = true;
       recognition.interimResults = true;
@@ -112,49 +119,104 @@ export function useSpeechRecognition({
 
         if (currentInterim) {
           setInterimTranscript(currentInterim);
-          if (onInterimTranscript) onInterimTranscript(currentInterim);
+          // ★ FIX: Use ref to always call latest callback
+          onInterimTranscriptRef.current?.(currentInterim);
         }
 
         if (currentFinal) {
           setInterimTranscript('');
-          if (onFinalTranscript) onFinalTranscript(currentFinal.trim());
+          // ★ FIX: Use ref to always call latest callback
+          onFinalTranscriptRef.current?.(currentFinal.trim());
         }
       };
 
       recognition.onerror = (event) => {
-        console.warn('Speech recognition error:', event.error);
-        if (event.error === 'not-allowed') {
+        const errorType = event.error;
+        console.warn('Speech recognition error:', errorType);
+
+        // ★ FIX: Auto-restart on recoverable errors instead of stopping
+        if (errorType === 'no-speech' || errorType === 'audio-capture' || errorType === 'network') {
+          // These are recoverable — just let onend handle restart
+          return;
+        }
+
+        if (errorType === 'not-allowed' || errorType === 'service-not-allowed') {
           setErrorMessage('마이크 접근 권한이 거부되었습니다. 브라우저 설정에서 마이크를 허용해 주세요.');
-          setIsListening(false);
           isListeningRef.current = false;
+          setIsListening(false);
         }
       };
 
       recognition.onend = () => {
-        // Auto restart if intended to keep listening
+        // ★ FIX: Robust auto-restart with delay to prevent rapid fire
         if (isListeningRef.current) {
-          try {
-            recognition.start();
-          } catch {
-            // Already started or restarting
+          // Clear any existing restart timeout
+          if (restartTimeoutRef.current) {
+            clearTimeout(restartTimeoutRef.current);
           }
+          
+          restartTimeoutRef.current = setTimeout(() => {
+            if (!isListeningRef.current) return;
+            
+            try {
+              // Create a fresh recognition instance to avoid state issues
+              const freshRecognition = createRecognition();
+              freshRecognition.lang = langRef.current;
+              recognitionRef.current = freshRecognition;
+              freshRecognition.start();
+            } catch (err) {
+              console.warn('Recognition restart failed, retrying in 500ms:', err);
+              // Retry once more after a longer delay
+              restartTimeoutRef.current = setTimeout(() => {
+                if (!isListeningRef.current) return;
+                try {
+                  const retryRecognition = createRecognition();
+                  retryRecognition.lang = langRef.current;
+                  recognitionRef.current = retryRecognition;
+                  retryRecognition.start();
+                } catch (retryErr) {
+                  console.error('Recognition restart failed permanently:', retryErr);
+                  isListeningRef.current = false;
+                  setIsListening(false);
+                  setErrorMessage('음성 인식이 중단되었습니다. 다시 시작해 주세요.');
+                }
+              }, 500);
+            }
+          }, 150); // 150ms delay prevents rapid restart loops
         } else {
           setIsListening(false);
         }
       };
 
-      recognitionRef.current = recognition;
-    } catch (err) {
-      console.error('Failed to init speech recognition:', err);
-      setIsSupported(false);
-    }
+      return recognition;
+    };
+
+    recognitionRef.current = createRecognition();
 
     return () => {
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
+      isListeningRef.current = false;
       if (recognitionRef.current) {
+        recognitionRef.current.onend = null; // prevent restart on cleanup
         recognitionRef.current.abort();
       }
     };
-  }, [onFinalTranscript, onInterimTranscript]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // ★ FIX: Empty deps — callbacks are accessed via refs
+
+  // Handle dynamic language change while listening
+  useEffect(() => {
+    langRef.current = lang;
+    if (recognitionRef.current && isListeningRef.current) {
+      try {
+        recognitionRef.current.stop(); // onend will auto-restart with the updated langRef.current!
+      } catch {
+        // Safe catch
+      }
+    }
+  }, [lang]);
 
   // Audio Context Visualizer
   const startAudioVisualizer = useCallback(async () => {
@@ -181,7 +243,6 @@ export function useSpeechRecognition({
         if (!analyserRef.current) return;
         analyserRef.current.getByteFrequencyData(dataArray);
 
-        // Calculate average volume
         let sum = 0;
         const bins: number[] = [];
         const binCount = 24;
@@ -234,13 +295,17 @@ export function useSpeechRecognition({
       await startAudioVisualizer();
     } catch (err) {
       console.warn('Recognition start caught:', err);
-      // Already running or permission prompt
     }
   }, [startAudioVisualizer]);
 
   const stopListening = useCallback(() => {
     isListeningRef.current = false;
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
+    }
     if (recognitionRef.current) {
+      recognitionRef.current.onend = null; // prevent auto-restart
       try {
         recognitionRef.current.stop();
       } catch {

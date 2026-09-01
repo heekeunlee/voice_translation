@@ -243,7 +243,7 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       {/* Header */}
       <Header
         sourceLang={sourceLang}
@@ -295,9 +295,9 @@ export function App() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-slate-900 bg-slate-950/80 py-6 text-center text-xs text-slate-600">
+      <footer className="w-full border-t border-gray-200 bg-white/80 py-6 text-center text-xs text-gray-500">
         <p className="flex items-center justify-center gap-2">
-          <span>PolyVoice Live AI</span>
+          <span className="font-semibold text-gray-700">PolyVoice Live AI</span>
           <span>•</span>
           <span>Flitto Style Real-Time Voice Translation & English Learning</span>
           <span>•</span>
