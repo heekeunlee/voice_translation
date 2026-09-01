@@ -29,22 +29,22 @@ import { ttsService } from './services/tts';
 export function App() {
   // 1. Settings & Persistence State
   const [settings, setSettings] = useState<AppSettings>(() => {
-    const saved = localStorage.getItem('polyvoice_settings');
+    const saved = localStorage.getItem('fluentlive_settings') || localStorage.getItem('polyvoice_settings');
     return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
   });
 
   const [glossary, setGlossary] = useState<GlossaryItem[]>(() => {
-    const saved = localStorage.getItem('polyvoice_glossary');
+    const saved = localStorage.getItem('fluentlive_glossary') || localStorage.getItem('polyvoice_glossary');
     return saved ? JSON.parse(saved) : DEFAULT_GLOSSARY_ITEMS;
   });
 
   const [savedCards, setSavedCards] = useState<SavedFlashcard[]>(() => {
-    const saved = localStorage.getItem('polyvoice_flashcards');
+    const saved = localStorage.getItem('fluentlive_flashcards') || localStorage.getItem('polyvoice_flashcards');
     return saved ? JSON.parse(saved) : [];
   });
 
   const [items, setItems] = useState<TranslationItem[]>(() => {
-    const saved = localStorage.getItem('polyvoice_history');
+    const saved = localStorage.getItem('fluentlive_history') || localStorage.getItem('polyvoice_history');
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -68,19 +68,19 @@ export function App() {
 
   // Save to LocalStorage
   useEffect(() => {
-    localStorage.setItem('polyvoice_settings', JSON.stringify(settings));
+    localStorage.setItem('fluentlive_settings', JSON.stringify(settings));
   }, [settings]);
 
   useEffect(() => {
-    localStorage.setItem('polyvoice_glossary', JSON.stringify(glossary));
+    localStorage.setItem('fluentlive_glossary', JSON.stringify(glossary));
   }, [glossary]);
 
   useEffect(() => {
-    localStorage.setItem('polyvoice_flashcards', JSON.stringify(savedCards));
+    localStorage.setItem('fluentlive_flashcards', JSON.stringify(savedCards));
   }, [savedCards]);
 
   useEffect(() => {
-    localStorage.setItem('polyvoice_history', JSON.stringify(items));
+    localStorage.setItem('fluentlive_history', JSON.stringify(items));
   }, [items]);
 
   // Execute Translation Pipeline
@@ -297,7 +297,7 @@ export function App() {
       {/* Footer */}
       <footer className="w-full border-t border-gray-200 bg-white/80 py-6 text-center text-xs text-gray-500">
         <p className="flex items-center justify-center gap-2">
-          <span className="font-semibold text-gray-700">PolyVoice Live AI</span>
+          <span className="font-semibold text-gray-700">FluentLive AI</span>
           <span>•</span>
           <span>AI Real-Time Voice Translation & English Learning</span>
           <span>•</span>

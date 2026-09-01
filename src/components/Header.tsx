@@ -50,7 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="font-bold text-lg tracking-tight text-gray-900 flex items-center gap-1.5">
-                PolyVoice <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-semibold border border-indigo-200">LIVE</span>
+                FluentLive <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-semibold border border-indigo-200">AI</span>
               </span>
             </div>
             <p className="text-[11px] text-gray-400 font-medium">실시간 AI 통번역 & 영어 학습</p>

@@ -18,7 +18,7 @@ interface AudienceRoomModalProps {
 export const AudienceRoomModal: React.FC<AudienceRoomModalProps> = ({
   isOpen,
   onClose,
-  roomId = 'poly-live-8831',
+  roomId = 'fluent-live-8831',
 }) => {
   const [isCopied, setIsCopied] = useState(false);
   const [selectedAudienceLang, setSelectedAudienceLang] = useState('en-US');

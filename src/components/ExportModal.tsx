@@ -25,7 +25,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   if (!isOpen) return null;
 
   const generateMarkdown = (): string => {
-    let md = `# PolyVoice Live 실시간 통번역 & 영어 학습 기록\n\n`;
+    let md = `# FluentLive 실시간 통번역 & 영어 학습 기록\n\n`;
     md += `* 일시: ${new Date().toLocaleString()}\n`;
     md += `* 총 번역 문장 수: ${items.length}개\n\n---\n\n`;
 
@@ -60,7 +60,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `PolyVoice_Transcript_${new Date().toISOString().slice(0, 10)}.${type}`;
+    a.download = `FluentLive_Transcript_${new Date().toISOString().slice(0, 10)}.${type}`;
     a.click();
   };
 
