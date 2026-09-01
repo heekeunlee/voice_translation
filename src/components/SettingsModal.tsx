@@ -61,7 +61,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
               환경 설정 및 AI 번역 엔진
             </h2>
-            <p className="text-xs text-gray-500">Gemini 2.0 Flash 초저지연 스트리밍 및 음성 옵션을 설정하세요.</p>
+            <p className="text-xs text-gray-500">Gemini 2.0 Flash 스트리밍 및 음성 옵션을 설정하세요.</p>
           </div>
         </div>
 
@@ -86,7 +86,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-indigo-600">Gemini 2.0 Flash</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">초저지연 추천</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">추천 엔진</span>
                 </div>
                 <p className="text-[11px] text-gray-500 mt-1">Google 차세대 초고속 멀티모달 번역</p>
               </button>

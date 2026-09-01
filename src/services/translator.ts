@@ -75,7 +75,7 @@ export class TranslationService {
 
     const isTutorMode = req.mode === 'tutor';
 
-    const systemInstruction = `당신은 세계 최고 수준의 초저지연 실시간 동시통역 엔진 및 AI 영어 학습 튜터입니다.
+    const systemInstruction = `당신은 세계 최고 수준의 실시간 동시통역 엔진 및 AI 영어 학습 튜터입니다.
 출발어: ${req.sourceLang} ➔ 도착어: ${req.targetLang}
 
 [번역 스타일 지침 - ${req.mode.toUpperCase()} 모드]
