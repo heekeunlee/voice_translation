@@ -16,7 +16,7 @@ export const TRANSLATION_MODES: ModeConfig[] = [
     name: '일상생활',
     icon: '☕',
     description: '생생한 구어체, 현지 원어민 일상 슬랭 및 자연스러운 대화 뉘앙스',
-    badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-300',
     promptGuidance: `일상생활 대화 모드(Casual & Conversational):
 - 원어민들이 실제로 친구나 가족과 대화할 때 쓰는 매우 자연스러운 구어체와 표현을 사용하세요.
 - 지나치게 딱딱한 직역을 피하고, 상황에 맞는 자연스러운 관용구(Idioms)와 슬랭을 살려 번역하세요.
@@ -28,7 +28,7 @@ export const TRANSLATION_MODES: ModeConfig[] = [
     name: '문학 & 소설',
     icon: '📖',
     description: '서정적 표현, 은유와 감정선이 살아있는 유려하고 아름다운 문체',
-    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+    badgeColor: 'bg-purple-50 text-purple-700 border-purple-300',
     promptGuidance: `문학 및 소설 모드(Literature & Creative Writing):
 - 은유, 서정성, 감정의 깊이가 풍부하게 묻어나는 유려한 문학적 문체를 사용하세요.
 - 시적 운율과 문장 간의 호흡, 감각적인 형용사와 묘사를 살려 번역하세요.
@@ -40,7 +40,7 @@ export const TRANSLATION_MODES: ModeConfig[] = [
     name: '논문 & 학술',
     icon: '🎓',
     description: '학술 전문 용어, 객관적 서술, 명확한 논리 구조 및 논문 규격 문체',
-    badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+    badgeColor: 'bg-blue-50 text-blue-700 border-blue-300',
     promptGuidance: `학술 및 논문 모드(Academic & Research Paper):
 - 학술 논문 및 연구 보고서에 적합한 엄격하고 객관적인 문체를 사용하세요.
 - 정확한 학술 전문 용어(Terminology), 피동/능동의 엄밀한 구분, 논리적 접속사를 사용하세요.
@@ -52,7 +52,7 @@ export const TRANSLATION_MODES: ModeConfig[] = [
     name: '기자 & 뉴스',
     icon: '📰',
     description: '군더더기 없는 두괄식 보도체, 사실 중심의 명료하고 신뢰감 있는 톤',
-    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+    badgeColor: 'bg-amber-50 text-amber-700 border-amber-300',
     promptGuidance: `기자 및 뉴스 보도 모드(Journalism & Broadcasting):
 - 방송 뉴스나 신문 기사처럼 간결하고 명확한 두괄식 보도 문체를 사용하세요.
 - 6하원칙에 입각한 사실 전달과 객관적인 브로드캐스팅 톤을 유지하세요.
@@ -64,7 +64,7 @@ export const TRANSLATION_MODES: ModeConfig[] = [
     name: '비즈니스',
     icon: '💼',
     description: '격식 있는 비즈니스 미팅, 이메일 및 공식 프레젠테이션용 정중한 어조',
-    badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+    badgeColor: 'bg-sky-50 text-sky-700 border-sky-300',
     promptGuidance: `비즈니스 및 격식 모드(Business & Corporate):
 - 공식 회의, 이메일, 파트너십 제안서에 어울리는 정중하고 프로페셔널한 비즈니스 영어를 사용하세요.
 - 정중한 요청(Would you kindly, We appreciate your prompt feedback 등)과 신뢰감 있는 어휘를 배치하세요.`,
@@ -75,7 +75,7 @@ export const TRANSLATION_MODES: ModeConfig[] = [
     name: '영어 튜터 (학습)',
     icon: '💡',
     description: '번역 + 원어민 대체 표현 + 핵심 단어/숙어 주석 + 문법 포인트 분석',
-    badgeColor: 'bg-pink-500/20 text-pink-300 border-pink-500/30',
+    badgeColor: 'bg-pink-50 text-pink-700 border-pink-300',
     promptGuidance: `영어 학습 튜터 모드(English Learning & AI Tutor):
 - 가장 자연스러운 번역과 함께, 영어 학습자에게 유용한 [원어민 대체 표현], [핵심 단어/숙어 목록], [문법/뉘앙스 팁]을 분석하여 제공하세요.
 - 한국인이 자주 실수하는 콩글리시 교정 포인트를 명쾌하게 짚어주세요.`,
@@ -99,6 +99,7 @@ export const DEFAULT_GLOSSARY_ITEMS: GlossaryItem[] = [
   { id: '4', sourceTerm: 'Disfluency', targetTerm: '말버릇/비문 정제', category: '언어학', description: '군더더기 필러 워드' },
   { id: '5', sourceTerm: 'Touch base', targetTerm: '간단히 연락/상황 공유하다', category: '비즈니스 관용구', description: 'Business Idiom' },
   { id: '6', sourceTerm: 'Bite the bullet', targetTerm: '이를 악물고 견디다/결단을 내리다', category: '영어 이디엄', description: 'Idiom' },
+  { id: '7', sourceTerm: 'Read the room', targetTerm: '분위기/눈치를 파악하다', category: '일상 관용구', description: '눈치 빠르게 행동하다' },
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {

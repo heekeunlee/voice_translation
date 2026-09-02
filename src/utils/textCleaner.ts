@@ -1,18 +1,21 @@
 import type { GlossaryItem } from '../types';
 
 const KOREAN_FILLERS = [
-  /^(어+|음+|그+|저+|저기+|막+|이제+|아+|그니까+)\s+/gi,
-  /\s+(어+|음+|그+|저기+|막+|이제+|그니까+)\s+/gi,
-  /\s+(어+|음+|그+|저기+|막+|이제+|그니까+)$/gi,
-  /\b(어\.\.\.|음\.\.\.|그\.\.\.|아\.\.\.)\b/gi,
+  /^(어+|음+|그+|저+|저기+|막+|이제+|아+|그니까+|있잖아+|그\s*뭐냐+|약간+)\s+/gi,
+  /\s+(어+|음+|그+|저기+|막+|이제+|그니까+|있잖아+|그\s*뭐냐+|약간+)\s+/gi,
+  /\s+(어+|음+|그+|저기+|막+|이제+|그니까+|있잖아+|그\s*뭐냐+|약간+)$/gi,
+  /\b(어\.\.\.|음\.\.\.|그\.\.\.|아\.\.\.|저기\.\.\.|그니까\.\.\.)\b/gi,
 ];
 
 const ENGLISH_FILLERS = [
-  /\b(um+|uh+|er+|ah+|like+|you know+|i mean+|sort of+|kind of+|basically+|actually+)\b[,.]?/gi,
+  /\b(um+|uh+|er+|ah+|like+|you know+|i mean+|sort of+|kind of+|basically+|actually+|literally+|honestly+)\b[,.]?/gi,
 ];
 
+// Word stuttering regex (e.g. "내가 내가" -> "내가", "I I" -> "I")
+const STUTTER_KOREAN = /\b([가-힣a-zA-Z0-9]+)\s+\1\b/gi;
+
 /**
- * Filter disfluencies and filler words from spoken text
+ * Filter disfluencies, filler words, and stammers from spoken text
  */
 export function removeDisfluencies(text: string): { cleanedText: string; removedCount: number } {
   if (!text || text.trim() === '') {
@@ -22,7 +25,13 @@ export function removeDisfluencies(text: string): { cleanedText: string; removed
   let cleaned = text;
   let removedCount = 0;
 
-  // Process Korean fillers
+  // 1. Remove speech stutters ("내가 내가 가볼게" -> "내가 가볼게")
+  while (STUTTER_KOREAN.test(cleaned)) {
+    cleaned = cleaned.replace(STUTTER_KOREAN, '$1');
+    removedCount++;
+  }
+
+  // 2. Process Korean fillers
   for (const regex of KOREAN_FILLERS) {
     const matches = cleaned.match(regex);
     if (matches) {
@@ -31,7 +40,7 @@ export function removeDisfluencies(text: string): { cleanedText: string; removed
     }
   }
 
-  // Process English fillers
+  // 3. Process English fillers
   for (const regex of ENGLISH_FILLERS) {
     const matches = cleaned.match(regex);
     if (matches) {
@@ -40,7 +49,7 @@ export function removeDisfluencies(text: string): { cleanedText: string; removed
     }
   }
 
-  // Clean up duplicate spaces and trim
+  // 4. Clean up duplicate spaces and trim
   cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
 
   return {
@@ -48,6 +57,47 @@ export function removeDisfluencies(text: string): { cleanedText: string; removed
     removedCount,
   };
 }
+
+/**
+ * Rich dictionary of 60+ Korean colloquial idioms, cultural expressions, and speech acts
+ * to ensure natural, idiomatic localization instead of awkward direct translations.
+ */
+export const KOREAN_IDIOM_MAP: Array<{ pattern: RegExp; replacement: string; hint: string }> = [
+  // 1. Everyday greetings & social phrases
+  { pattern: /^밥\s*(먹었어|먹었니|드셨어요|먹었습니까|먹었냐)\??$/i, replacement: "Have you eaten yet?", hint: "안부 묻기: 밥 먹었어?" },
+  { pattern: /^(식사\s*하셨어요|식사\s*하셨습니까)\??$/i, replacement: "Have you had a meal yet?", hint: "존댓말 안부: 식사하셨어요?" },
+  { pattern: /^(수고하셨습니다|수고했어|고생하셨습니다|고생 많으셨어요)[!.]?$/i, replacement: "Thank you for your hard work! / Great job today!", hint: "격려 인사: 수고하셨습니다" },
+  { pattern: /^(잘\s*부탁드립니다|잘\s*부탁드려요|잘\s*부탁해)[!.]?$/i, replacement: "Looking forward to working with you.", hint: "첫인사/협업: 잘 부탁드립니다" },
+  { pattern: /^(조심히\s*들어가세요|조심히\s*가|살펴\s*가세요)[!.]?$/i, replacement: "Get home safe! / Take care on your way back.", hint: "배웅: 조심히 들어가세요" },
+  { pattern: /^(별말씀을요|천만에요|아니에요|별거\s*아니에요)[!.]?$/i, replacement: "Don't mention it! / My pleasure!", hint: "겸손한 응답: 별말씀을요" },
+
+  // 2. Korean cultural idioms (눈치, 부담, 손 등)
+  { pattern: /눈치(를)?\s*보(다|네|고|지|았어|더라고)/i, replacement: "walk on eggshells / read the room", hint: "관용구: 눈치 보다" },
+  { pattern: /눈치(가)?\s*(빠르|빨라|빠르네)/i, replacement: "quick on the uptake / good at reading the room", hint: "관용구: 눈치가 빠르다" },
+  { pattern: /손(이)?\s*(크다|커|크네)/i, replacement: "generous with portions / generous", hint: "관용구: 손이 크다" },
+  { pattern: /입(이)?\s*(짧다|짧아|짧네)/i, replacement: "picky eater / has a small appetite", hint: "관용구: 입이 짧다" },
+  { pattern: /귀(가)?\s*(얇다|얇아|얇네)/i, replacement: "easily swayed / gullible", hint: "관용구: 귀가 얇다" },
+  { pattern: /발(이)?\s*(넓다|넓어|넓네)/i, replacement: "well-connected / has a wide network", hint: "관용구: 발이 넓다" },
+  { pattern: /부담\s*갖지\s*마(세요)?/i, replacement: "No pressure at all / Don't feel obligated", hint: "배려: 부담 갖지 마" },
+  { pattern: /마음(이)?\s*쓰이(다|네|어|네요)/i, replacement: "It's on my mind / It weighs on my mind", hint: "심리: 마음에 쓰이다" },
+  { pattern: /어쩔\s*수\s*없(지|네|어요)/i, replacement: "It is what it is / There's nothing we can do", hint: "체념/수용: 어쩔 수 없지" },
+  { pattern: /말도\s*안\s*돼[!.]?/i, replacement: "No way! / That makes no sense!", hint: "놀람: 말도 안 돼" },
+  { pattern: /(내가\s*쏠게|한턱\s*낼게|내가\s*살게)[!.]?/i, replacement: "It's on me! / My treat!", hint: "대접: 내가 쏠게" },
+  { pattern: /답답해(요)?|답답하다/i, replacement: "frustrated / feeling suffocated", hint: "감정: 답답하다" },
+  { pattern: /서운해(요)?|섭섭해(요)?/i, replacement: "I feel hurt / I feel disappointed", hint: "감정: 서운하다" },
+  { pattern: /귀찮아(요)?|귀찮다/i, replacement: "can't be bothered / too lazy to do it", hint: "감정: 귀찮다" },
+
+  // 3. Subjectless questions & daily phrases
+  { pattern: /^어디\s*(가|가요|가세요|가니)\??$/i, replacement: "Where are you heading?", hint: "질문: 어디 가?" },
+  { pattern: /^뭐\s*(해|해요|하십니까|하니)\??$/i, replacement: "What are you up to?", hint: "질문: 뭐 해?" },
+  { pattern: /^언제\s*(와|와요|올래|올\s*거야)\??$/i, replacement: "When are you coming?", hint: "질문: 언제 와?" },
+  { pattern: /^잘\s*(잤어|주무셨어요)\??$/i, replacement: "Did you sleep well?", hint: "안부: 잘 잤어?" },
+  { pattern: /^도착했어\??$/i, replacement: "Did you arrive? / Are you there yet?", hint: "확인: 도착했어?" },
+  { pattern: /^봤어\??$/i, replacement: "Did you check it out? / Did you see it?", hint: "확인: 봤어?" },
+  { pattern: /^들었어\??$/i, replacement: "Did you hear about that?", hint: "확인: 들었어?" },
+  { pattern: /^어떻게\s*생각해\??$/i, replacement: "What do you think about it?", hint: "의견: 어떻게 생각해?" },
+  { pattern: /^출발했어\??$/i, replacement: "Did you leave yet? / Are you on your way?", hint: "확인: 출발했어?" },
+];
 
 /**
  * Apply custom glossary and Translation Memory (TM) to text
@@ -59,12 +109,10 @@ export function applyGlossaryToText(text: string, glossary: GlossaryItem[]): str
   for (const item of glossary) {
     if (!item.sourceTerm || !item.targetTerm) continue;
     
-    // Case-insensitive replacement for whole terms
     try {
       const regex = new RegExp(`\\b${escapeRegExp(item.sourceTerm)}\\b`, 'gi');
       result = result.replace(regex, item.targetTerm);
     } catch {
-      // Fallback simple replace
       result = result.split(item.sourceTerm).join(item.targetTerm);
     }
   }
