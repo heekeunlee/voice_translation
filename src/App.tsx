@@ -91,6 +91,11 @@ export function App() {
     setCurrentStreamingTranslation('');
 
     try {
+      const historyContext = items.slice(0, 3).map(i => ({
+        sourceText: i.sourceText,
+        translatedText: i.translatedText,
+      }));
+
       const result = await translationService.translate({
         text,
         sourceLang,
@@ -98,6 +103,7 @@ export function App() {
         mode: currentMode,
         glossary,
         settings,
+        history: historyContext,
         onChunk: (_chunk, accumulated) => {
           setCurrentStreamingTranslation(accumulated);
         },
@@ -133,7 +139,7 @@ export function App() {
     } finally {
       setIsTranslating(false);
     }
-  }, [sourceLang, targetLang, currentMode, glossary, settings]);
+  }, [sourceLang, targetLang, currentMode, glossary, settings, items]);
 
   // Web Speech STT Hook
   const {
