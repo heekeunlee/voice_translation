@@ -5,18 +5,10 @@ import {
   BookOpen, 
   BookMarked, 
   QrCode, 
-  ArrowRightLeft,
   Download
 } from 'lucide-react';
-import type { LanguageOption } from '../types';
-import { SUPPORTED_LANGUAGES } from '../constants';
 
 interface HeaderProps {
-  sourceLang: string;
-  targetLang: string;
-  onSourceLangChange: (code: string) => void;
-  onTargetLangChange: (code: string) => void;
-  onSwapLanguages: () => void;
   onOpenSettings: () => void;
   onOpenGlossary: () => void;
   onOpenFlashcards: () => void;
@@ -26,11 +18,6 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  sourceLang,
-  targetLang,
-  onSourceLangChange,
-  onTargetLangChange,
-  onSwapLanguages,
   onOpenSettings,
   onOpenGlossary,
   onOpenFlashcards,
@@ -55,41 +42,6 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <p className="text-[11px] text-gray-400 font-medium">실시간 AI 통번역 & 영어 학습</p>
           </div>
-        </div>
-
-        {/* Center: Language Switcher */}
-        <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-2xl border border-gray-200 shadow-inner">
-          <select
-            value={sourceLang}
-            onChange={(e) => onSourceLangChange(e.target.value)}
-            className="bg-white text-gray-700 text-xs sm:text-sm font-medium rounded-xl px-3 py-1.5 outline-none border border-gray-200 hover:border-gray-300 transition cursor-pointer"
-          >
-            {SUPPORTED_LANGUAGES.map((l: LanguageOption) => (
-              <option key={l.code} value={l.speechCode}>
-                {l.flag} {l.name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            onClick={onSwapLanguages}
-            title="언어 전환"
-            className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-indigo-500 transition"
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-          </button>
-
-          <select
-            value={targetLang}
-            onChange={(e) => onTargetLangChange(e.target.value)}
-            className="bg-white text-gray-700 text-xs sm:text-sm font-medium rounded-xl px-3 py-1.5 outline-none border border-gray-200 hover:border-gray-300 transition cursor-pointer"
-          >
-            {SUPPORTED_LANGUAGES.map((l: LanguageOption) => (
-              <option key={l.code} value={l.speechCode}>
-                {l.flag} {l.name}
-              </option>
-            ))}
-          </select>
         </div>
 
         {/* Right Tools */}

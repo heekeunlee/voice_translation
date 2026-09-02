@@ -73,7 +73,13 @@ export interface AppSettings {
   speculativeTranslation: boolean;
   fontSize: 'sm' | 'base' | 'lg' | 'xl';
   bilingualDisplay: boolean;
-  highContrastSubtitles: boolean;
+  /**
+   * Dark stage for the conversation view. Replaces the old
+   * `highContrastSubtitles`, which only themed one panel of the previous
+   * two-column layout; the new key means existing saved values (defaulted to
+   * true) do not silently turn the whole app dark.
+   */
+  darkStage: boolean;
 }
 
 export interface ModeConfig {

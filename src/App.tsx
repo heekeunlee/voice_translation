@@ -2,9 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { AudienceView } from './components/AudienceView';
 import { Header } from './components/Header';
-import { ModeSelector } from './components/ModeSelector';
-import { LivePresenter } from './components/LivePresenter';
-import { LiveTimeline } from './components/LiveTimeline';
+import { ConversationStream } from './components/ConversationStream';
 import { GlossaryModal } from './components/GlossaryModal';
 import { FlashcardsModal } from './components/FlashcardsModal';
 import type { SavedFlashcard } from './components/FlashcardsModal';
@@ -410,7 +408,6 @@ function PresenterApp() {
   const {
     isListening,
     audioLevel,
-    audioFrequencies,
     toggleListening,
     isSupported,
     errorMessage,
@@ -593,14 +590,9 @@ function PresenterApp() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="h-screen overflow-hidden bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       {/* Header */}
       <Header
-        sourceLang={sourceLang}
-        targetLang={targetLang}
-        onSourceLangChange={setSourceLang}
-        onTargetLangChange={setTargetLang}
-        onSwapLanguages={handleSwapLanguages}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenGlossary={() => setIsGlossaryOpen(true)}
         onOpenFlashcards={() => setIsFlashcardsOpen(true)}
@@ -656,38 +648,28 @@ function PresenterApp() {
         </div>
       )}
 
-      {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-7xl mx-auto flex flex-col">
-        {/* Mode Selector */}
-        <ModeSelector
-          currentMode={currentMode}
-          onSelectMode={setCurrentMode}
-        />
-
-        {/* Live Subtitle Presenter Screen */}
-        <LivePresenter
+      {/* Main Content Area — one continuous conversation stream */}
+      <main className="flex-1 min-h-0 w-full flex flex-col">
+        <ConversationStream
+          items={items}
           isListening={isListening}
           onToggleListening={toggleListening}
           audioLevel={audioLevel}
-          audioFrequencies={audioFrequencies}
           currentInterimSource={currentInterimSource}
           currentStreamingTranslation={currentStreamingTranslation}
           provisionalTranslation={isListening ? provisionalTranslation : ''}
+          isTranslating={isTranslating}
+          sourceLang={sourceLang}
           targetLang={targetLang}
+          onSourceLangChange={setSourceLang}
+          onTargetLangChange={setTargetLang}
+          onSwapLanguages={handleSwapLanguages}
+          currentMode={currentMode}
+          onSelectMode={setCurrentMode}
           fontSize={settings.fontSize}
           bilingualDisplay={settings.bilingualDisplay}
-          highContrastSubtitles={settings.highContrastSubtitles}
-          isTranslating={isTranslating}
-          latestItem={items[0] || null}
-          currentMode={currentMode}
+          darkStage={settings.darkStage}
           onTestSample={handleTestSample}
-          onBookmarkItem={handleBookmarkItem}
-          onOpenShadowing={(item) => setActiveShadowingItem(item)}
-        />
-
-        {/* History Timeline with English Learning Drawers */}
-        <LiveTimeline
-          items={items}
           onBookmarkItem={handleBookmarkItem}
           onDeleteItem={handleDeleteItem}
           onClearAll={handleClearAllItems}
@@ -697,14 +679,12 @@ function PresenterApp() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-gray-200 bg-white/80 py-6 text-center text-xs text-gray-500">
-        <p className="flex items-center justify-center gap-2">
-          <span className="font-semibold text-gray-700">FluentLive AI</span>
-          <span>•</span>
-          <span>AI Real-Time Voice Translation & English Learning</span>
-          <span>•</span>
-          <span>{activeEngineLabel}</span>
-        </p>
+      <footer className={`shrink-0 w-full border-t border-gray-200 bg-white/80 py-2 text-center text-[11px] text-gray-400 ${
+        settings.darkStage ? 'hidden sm:block' : ''
+      }`}>
+        <span className="font-semibold text-gray-500">FluentLive AI</span>
+        <span className="mx-1.5">·</span>
+        <span>{activeEngineLabel}</span>
       </footer>
 
       {/* Modals */}

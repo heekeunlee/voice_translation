@@ -305,15 +305,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             <label className="flex items-start justify-between gap-3 cursor-pointer">
               <div>
-                <div className="text-xs font-bold text-gray-800">고대비 자막 (High Contrast)</div>
+                <div className="text-xs font-bold text-gray-800">어두운 화면 (Dark Stage)</div>
                 <p className="text-[11px] text-gray-500 mt-0.5">
-                  어두운 배경에 흰 글씨로 표시합니다. 밝은 회의실이나 프로젝터에서 가독성이 좋습니다.
+                  대화 화면을 검은 배경에 흰 글씨로 표시합니다. 어두운 회의실이나 프로젝터 투사에 적합합니다.
                 </p>
               </div>
               <input
                 type="checkbox"
-                checked={formData.highContrastSubtitles}
-                onChange={(e) => setFormData({ ...formData, highContrastSubtitles: e.target.checked })}
+                checked={formData.darkStage}
+                onChange={(e) => setFormData({ ...formData, darkStage: e.target.checked })}
                 className="w-5 h-5 mt-0.5 rounded accent-indigo-600 cursor-pointer shrink-0"
               />
             </label>

@@ -147,5 +147,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   speculativeTranslation: true,
   fontSize: 'base',
   bilingualDisplay: true,
-  highContrastSubtitles: true,
+  darkStage: false,
 };
