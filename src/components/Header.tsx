@@ -27,34 +27,34 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="sticky top-0 z-30 w-full border-b border-gray-200 bg-white/80 backdrop-blur-xl shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-2">
         
         {/* Brand */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/25">
             <Globe2 className="w-5 h-5 text-white" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-lg tracking-tight text-gray-900 flex items-center gap-1.5">
-                FluentLive <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-semibold border border-indigo-200">AI</span>
-              </span>
-            </div>
-            <p className="text-[11px] text-gray-400 font-medium">실시간 AI 통번역 & 영어 학습</p>
+          <div className="min-w-0">
+            <span className="font-bold text-base sm:text-lg tracking-tight text-gray-900 flex items-center gap-1.5 whitespace-nowrap">
+              FluentLive
+              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-semibold border border-indigo-200">AI</span>
+            </span>
+            {/* The tagline wrapped to two lines on a phone and broke the header height. */}
+            <p className="hidden sm:block text-[11px] text-gray-400 font-medium">실시간 AI 통번역 & 영어 학습</p>
           </div>
         </div>
 
         {/* Right Tools */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          <button onClick={onOpenAudienceRoom} className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 text-xs font-medium transition" title="청중 실시간 자막 화면 (QR 공유)">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          <button onClick={onOpenAudienceRoom} className="hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 text-xs font-medium transition" title="청중 실시간 자막 화면 (QR 공유)">
             <QrCode className="w-4 h-4 text-emerald-500" />
-            <span>청중 공유</span>
+            <span className="hidden md:inline">청중 공유</span>
           </button>
-          <button onClick={onOpenGlossary} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 text-xs font-medium transition" title="전문 용어집 및 번역 메모리(TM)">
+          <button onClick={onOpenGlossary} className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 text-xs font-medium transition" title="전문 용어집 및 번역 메모리(TM)">
             <BookOpen className="w-4 h-4 text-purple-500" />
             <span className="hidden sm:inline">용어집</span>
           </button>
-          <button onClick={onOpenFlashcards} className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 text-xs font-medium transition" title="영어 단어장 & 섀도잉 학습">
+          <button onClick={onOpenFlashcards} className="relative flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 text-xs font-medium transition" title="영어 단어장 & 섀도잉 학습">
             <BookMarked className="w-4 h-4 text-pink-500" />
             <span className="hidden sm:inline">학습 단어장</span>
             {savedCardsCount > 0 && (
@@ -63,7 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             )}
           </button>
-          <button onClick={onOpenExport} className="p-2 rounded-xl bg-white hover:bg-gray-50 text-gray-400 hover:text-gray-600 border border-gray-200 transition" title="대화 및 번역본 내보내기">
+          <button onClick={onOpenExport} className="hidden sm:block p-2 rounded-xl bg-white hover:bg-gray-50 text-gray-400 hover:text-gray-600 border border-gray-200 transition" title="대화 및 번역본 내보내기">
             <Download className="w-4 h-4" />
           </button>
           <button onClick={onOpenSettings} className="p-2 rounded-xl bg-white hover:bg-gray-50 text-gray-400 hover:text-indigo-500 border border-gray-200 transition" title="엔진 및 API 설정">

@@ -118,9 +118,9 @@ export const ConversationStream: React.FC<ConversationStreamProps> = ({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-10 py-8"
+        className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-10 py-5 sm:py-8"
       >
-        <div className="max-w-3xl mx-auto space-y-7">
+        <div className="max-w-3xl mx-auto space-y-5 sm:space-y-7">
 
           {ordered.length === 0 && !hasLiveLine && (
             <div className="py-16 text-center">
@@ -192,7 +192,7 @@ export const ConversationStream: React.FC<ConversationStreamProps> = ({
                   {item.learningDetails && (
                     <button
                       onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                      className={`ml-1 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition ${
+                      className={`ml-1 inline-flex items-center gap-1 px-2.5 py-2.5 sm:py-1 rounded-lg text-[11px] font-semibold transition ${
                         dark ? 'text-indigo-300 hover:bg-white/10' : 'text-indigo-600 hover:bg-indigo-50'
                       }`}
                     >
@@ -201,7 +201,7 @@ export const ConversationStream: React.FC<ConversationStreamProps> = ({
                       {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                     </button>
                   )}
-                  <span className="flex-1" />
+                  <span className="flex-1 min-w-4" />
                   <IconButton dark={dark} title="이 줄 삭제" onClick={() => onDeleteItem(item.id)}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </IconButton>
@@ -289,11 +289,11 @@ export const ConversationStream: React.FC<ConversationStreamProps> = ({
 
       {/* Controls */}
       <div className={`shrink-0 border-t ${dark ? 'border-white/10' : 'border-gray-200'}`}>
-        <div className="max-w-3xl mx-auto px-5 py-5 flex flex-col items-center gap-4">
+        <div className="max-w-3xl mx-auto px-4 py-3 sm:py-5 flex flex-col items-center gap-2.5 sm:gap-4">
 
           {/* Mic, flanked by the input spectrum while recording */}
-          <div className="flex items-center gap-3 h-16">
-            <div className="w-24 sm:w-32 flex justify-end">
+          <div className="flex items-center gap-2 sm:gap-3 h-14 sm:h-16">
+            <div className="w-16 sm:w-32 flex justify-end">
               <LiveWaveVisualizer
                 isListening={isListening}
                 audioLevel={audioLevel}
@@ -305,7 +305,7 @@ export const ConversationStream: React.FC<ConversationStreamProps> = ({
           <button
             onClick={onToggleListening}
             aria-label={isListening ? '음성 인식 중지' : '음성 인식 시작'}
-            className="relative w-16 h-16 rounded-full flex items-center justify-center transition-transform active:scale-95"
+            className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-transform active:scale-95 shrink-0"
           >
             {/* Level ring — reacts to input volume */}
             {isListening && (
@@ -322,7 +322,7 @@ export const ConversationStream: React.FC<ConversationStreamProps> = ({
               : <Mic className={`w-6 h-6 relative z-10 ${dark ? 'text-slate-900' : 'text-white'}`} />}
           </button>
 
-            <div className="w-24 sm:w-32 flex justify-start">
+            <div className="w-16 sm:w-32 flex justify-start">
               <LiveWaveVisualizer
                 isListening={isListening}
                 audioLevel={audioLevel}
@@ -365,7 +365,7 @@ export const ConversationStream: React.FC<ConversationStreamProps> = ({
             {items.length > 0 && (
               <button
                 onClick={onClearAll}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
+                className={`inline-flex items-center gap-1.5 px-3 py-2 sm:py-1 rounded-lg text-[11px] font-semibold border transition ${
                   dark
                     ? 'border-white/10 text-white/60 hover:bg-rose-500/15 hover:text-rose-300 hover:border-rose-400/30'
                     : 'border-gray-200 text-gray-500 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200'
@@ -392,6 +392,11 @@ export const ConversationStream: React.FC<ConversationStreamProps> = ({
   );
 };
 
+/**
+ * Touch targets are ~40px on phones and tighten to 26px from `sm` up, where a
+ * mouse is precise. The compact desktop size alone put a destructive delete
+ * button inside a 26px target on touch, which is well under the ~44px guidance.
+ */
 const IconButton: React.FC<{
   dark: boolean; title: string; onClick: () => void; children: React.ReactNode;
 }> = ({ dark, title, onClick, children }) => (
@@ -399,8 +404,8 @@ const IconButton: React.FC<{
     onClick={onClick}
     title={title}
     aria-label={title}
-    className={`p-1.5 rounded-lg transition ${
-      dark ? 'text-white/40 hover:text-white hover:bg-white/10' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+    className={`p-3 sm:p-1.5 rounded-lg transition [&>svg]:w-4 [&>svg]:h-4 sm:[&>svg]:w-3.5 sm:[&>svg]:h-3.5 ${
+      dark ? 'text-white/40 hover:text-white active:bg-white/10 hover:bg-white/10' : 'text-gray-400 hover:text-gray-700 active:bg-gray-100 hover:bg-gray-100'
     }`}
   >
     {children}

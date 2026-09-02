@@ -591,7 +591,7 @@ function PresenterApp() {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="h-screen h-[100dvh] overflow-hidden bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       {/* Header */}
       <Header
         onOpenSettings={() => setIsSettingsOpen(true)}
@@ -681,9 +681,7 @@ function PresenterApp() {
       </main>
 
       {/* Footer */}
-      <footer className={`shrink-0 w-full border-t border-gray-200 bg-white/80 py-2 text-center text-[11px] text-gray-400 ${
-        settings.darkStage ? 'hidden sm:block' : ''
-      }`}>
+      <footer className="hidden sm:block shrink-0 w-full border-t border-gray-200 bg-white/80 py-2 text-center text-[11px] text-gray-400">
         <span className="font-semibold text-gray-500">FluentLive AI</span>
         <span className="mx-1.5">·</span>
         <span>{activeEngineLabel}</span>
