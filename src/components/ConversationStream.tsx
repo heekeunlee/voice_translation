@@ -7,6 +7,7 @@ import {
 import type { AppSettings, KeyVocabulary, LanguageOption, TranslationItem, TranslationMode } from '../types';
 import { SUPPORTED_LANGUAGES, TRANSLATION_MODES } from '../constants';
 import { ttsService } from '../services/tts';
+import { LiveWaveVisualizer } from './LiveWaveVisualizer';
 
 interface ConversationStreamProps {
   /** Newest first, as stored. Rendered oldest-first so the newest sits at the bottom. */
@@ -14,6 +15,7 @@ interface ConversationStreamProps {
   isListening: boolean;
   onToggleListening: () => void;
   audioLevel: number;
+  audioFrequencies: number[];
   currentInterimSource: string;
   currentStreamingTranslation: string;
   provisionalTranslation: string;
@@ -60,7 +62,7 @@ const SAMPLE_PHRASES = [
 ];
 
 export const ConversationStream: React.FC<ConversationStreamProps> = ({
-  items, isListening, onToggleListening, audioLevel,
+  items, isListening, onToggleListening, audioLevel, audioFrequencies,
   currentInterimSource, currentStreamingTranslation, provisionalTranslation, isTranslating,
   sourceLang, targetLang, onSourceLangChange, onTargetLangChange, onSwapLanguages,
   currentMode, onSelectMode, fontSize, bilingualDisplay, darkStage,
@@ -289,7 +291,17 @@ export const ConversationStream: React.FC<ConversationStreamProps> = ({
       <div className={`shrink-0 border-t ${dark ? 'border-white/10' : 'border-gray-200'}`}>
         <div className="max-w-3xl mx-auto px-5 py-5 flex flex-col items-center gap-4">
 
-          {/* Mic */}
+          {/* Mic, flanked by the input spectrum while recording */}
+          <div className="flex items-center gap-3 h-16">
+            <div className="w-24 sm:w-32 flex justify-end">
+              <LiveWaveVisualizer
+                isListening={isListening}
+                audioLevel={audioLevel}
+                audioFrequencies={audioFrequencies}
+                dark={dark}
+              />
+            </div>
+
           <button
             onClick={onToggleListening}
             aria-label={isListening ? '음성 인식 중지' : '음성 인식 시작'}
@@ -309,6 +321,16 @@ export const ConversationStream: React.FC<ConversationStreamProps> = ({
               ? <MicOff className="w-6 h-6 text-white relative z-10" />
               : <Mic className={`w-6 h-6 relative z-10 ${dark ? 'text-slate-900' : 'text-white'}`} />}
           </button>
+
+            <div className="w-24 sm:w-32 flex justify-start">
+              <LiveWaveVisualizer
+                isListening={isListening}
+                audioLevel={audioLevel}
+                audioFrequencies={audioFrequencies}
+                dark={dark}
+              />
+            </div>
+          </div>
 
           {/* Languages */}
           <div className="flex items-center gap-2">
@@ -341,9 +363,18 @@ export const ConversationStream: React.FC<ConversationStreamProps> = ({
             </select>
 
             {items.length > 0 && (
-              <IconButton dark={dark} title="대화 비우기" onClick={onClearAll}>
-                <Eraser className="w-3.5 h-3.5" />
-              </IconButton>
+              <button
+                onClick={onClearAll}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
+                  dark
+                    ? 'border-white/10 text-white/60 hover:bg-rose-500/15 hover:text-rose-300 hover:border-rose-400/30'
+                    : 'border-gray-200 text-gray-500 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200'
+                }`}
+              >
+                <Eraser className="w-3 h-3" />
+                대화 비우기
+                <span className={dark ? 'text-white/30' : 'text-gray-400'}>({items.length})</span>
+              </button>
             )}
             <IconButton dark={dark} title={isFullScreen ? '전체화면 종료' : '대화면 모드'}
               onClick={() => setIsFullScreen(!isFullScreen)}>

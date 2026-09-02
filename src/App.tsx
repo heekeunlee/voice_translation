@@ -408,6 +408,7 @@ function PresenterApp() {
   const {
     isListening,
     audioLevel,
+    audioFrequencies,
     toggleListening,
     isSupported,
     errorMessage,
@@ -655,6 +656,7 @@ function PresenterApp() {
           isListening={isListening}
           onToggleListening={toggleListening}
           audioLevel={audioLevel}
+          audioFrequencies={audioFrequencies}
           currentInterimSource={currentInterimSource}
           currentStreamingTranslation={currentStreamingTranslation}
           provisionalTranslation={isListening ? provisionalTranslation : ''}
