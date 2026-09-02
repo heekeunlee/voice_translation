@@ -1,0 +1,12 @@
+name = "fluentlive-proxy"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+# Every origin allowed to call this proxy, comma separated, no trailing slash.
+# Replace the GitHub Pages origin with your own.
+ALLOWED_ORIGINS = "https://heekeunlee.github.io,http://localhost:5173,http://localhost:4319"
+
+# API keys are NOT set here — they are secrets:
+#   npx wrangler secret put GEMINI_API_KEY
+#   npx wrangler secret put OPENAI_API_KEY   (optional)
