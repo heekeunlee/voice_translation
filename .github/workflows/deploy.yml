@@ -32,6 +32,11 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          # Repository variable (Settings -> Secrets and variables -> Actions -> Variables).
+          # Not a secret: it is a public URL. The API keys live in the Worker.
+          # Leave it unset and the app simply falls back to the built-in engine.
+          VITE_PROXY_URL: ${{ vars.PROXY_URL }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

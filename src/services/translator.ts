@@ -1,6 +1,43 @@
 import type { AppSettings, GlossaryItem, LearningDetail, TranslationMode } from '../types';
 import { TRANSLATION_MODES } from '../constants';
-import { formatGlossaryForPrompt, removeDisfluencies, KOREAN_IDIOM_MAP } from '../utils/textCleaner';
+import { applyGlossaryToText, formatGlossaryForPrompt, removeDisfluencies, KOREAN_IDIOM_MAP } from '../utils/textCleaner';
+import { readSseStream } from './sseStream';
+
+/** Strip a trailing slash so `${proxy}/gemini/...` never doubles up. */
+export function normalizeProxyUrl(value: string | undefined): string {
+  return (value ?? '').trim().replace(/\/+$/, '');
+}
+
+/** Turn an HTTP failure into something a user can act on. */
+function describeApiError(provider: string, status: number, detail: string): string {
+  const trimmed = detail.slice(0, 300);
+
+  // The proxy answers with its own JSON `error` string; prefer it.
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: unknown };
+    if (typeof parsed.error === 'string') return parsed.error;
+  } catch {
+    // Not the proxy's shape — fall through to the generic mapping.
+  }
+
+  if (status === 400 && /API_?key|api key/i.test(trimmed)) return `${provider} API 키가 올바르지 않습니다.`;
+  if (status === 401 || status === 403) return `${provider} API 키가 거부되었습니다 (권한 또는 키 확인).`;
+  if (status === 413) return '입력이 너무 깁니다.';
+  if (status === 404) return `${provider} 모델을 찾을 수 없습니다 (모델 이름이 더 이상 제공되지 않을 수 있습니다).`;
+  if (status === 429) return `${provider} 요청 한도를 초과했습니다.`;
+  if (status >= 500) return `${provider} 서버 오류 (${status}).`;
+  return `${provider} 오류 (${status}).`;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** True for both `AbortController` aborts and manual AbortError throws. */
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException ? err.name === 'AbortError'
+    : typeof err === 'object' && err !== null && (err as { name?: string }).name === 'AbortError';
+}
 
 export interface ConversationContext {
   sourceText: string;
@@ -16,14 +53,33 @@ export interface TranslateRequest {
   settings: AppSettings;
   history?: ConversationContext[];
   onChunk?: (chunk: string, fullTranslatedText: string) => void;
+  /** Aborts an in-flight request when a newer utterance supersedes it. */
+  signal?: AbortSignal;
 }
 
 export interface TranslateResult {
   translatedText: string;
   cleanedSourceText: string;
   learningDetails?: LearningDetail;
+  /** Time until the full translation finished streaming. */
   latencyMs: number;
+  /**
+   * Time to first token. This is the number that matches what a viewer feels,
+   * whereas `latencyMs` also includes however long the rest of the sentence took
+   * to stream in.
+   */
+  ttftMs?: number;
+  /** Which engine actually produced this text. */
+  engineUsed: EngineId;
+  /**
+   * Set when a configured AI engine failed and the built-in engine took over.
+   * Previously this was swallowed, so a wrong API key or model name silently
+   * degraded every translation with nothing shown to the user.
+   */
+  fallbackReason?: string;
 }
+
+export type EngineId = AppSettings['engine'] | 'builtin';
 
 /**
  * Advanced Translation Service supporting Gemini Flash, OpenAI, and Smart Local Fallback
@@ -46,6 +102,7 @@ export class TranslationService {
         translatedText: '',
         cleanedSourceText: '',
         latencyMs: 0,
+        engineUsed: 'builtin',
       };
     }
 
@@ -55,10 +112,13 @@ export class TranslationService {
 
     let result: TranslateResult;
 
-    // Route by engine
-    if (req.settings.engine.startsWith('gemini') && req.settings.geminiApiKey) {
+    // Route by engine. A configured proxy stands in for a key: it holds the
+    // credential server-side, so the browser needs neither.
+    const proxy = normalizeProxyUrl(req.settings.proxyUrl);
+
+    if (req.settings.engine.startsWith('gemini') && (proxy || req.settings.geminiApiKey)) {
       result = await this.translateWithGemini(cleanedText, req, modeConfig.promptGuidance, glossaryPrompt, historyPrompt, startTime);
-    } else if (req.settings.engine === 'gpt-4o-mini' && req.settings.openaiApiKey) {
+    } else if (req.settings.engine === 'gpt-4o-mini' && (proxy || req.settings.openaiApiKey)) {
       result = await this.translateWithOpenAI(cleanedText, req, modeConfig.promptGuidance, glossaryPrompt, historyPrompt, startTime);
     } else {
       // Smart Fallback (Enhanced Google Translate + Local Pragmatics & Heuristics)
@@ -144,8 +204,17 @@ export class TranslationService {
     historyPrompt: string,
     startTime: number
   ): Promise<TranslateResult> {
-    const modelName = req.settings.engine === 'gemini-1.5-flash' ? 'gemini-1.5-flash' : 'gemini-2.0-flash';
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?alt=sse&key=${req.settings.geminiApiKey}`;
+    const modelName = req.settings.engine;
+    const proxy = normalizeProxyUrl(req.settings.proxyUrl);
+
+    /*
+     * Direct calls put the API key in the URL query string, where it lands in
+     * browser history, extensions and any intermediate log. Through the proxy the
+     * key never leaves the server.
+     */
+    const endpoint = proxy
+      ? `${proxy}/gemini/${modelName}`
+      : `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?alt=sse`;
 
     const isTutorMode = req.mode === 'tutor';
     const pragmaticsGuidance = this.getPragmaticsGuidance(req.sourceLang, req.targetLang);
@@ -184,7 +253,10 @@ ${isTutorMode ? `
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        signal: req.signal,
+        headers: proxy
+          ? { 'Content-Type': 'application/json' }
+          : { 'Content-Type': 'application/json', 'x-goog-api-key': req.settings.geminiApiKey },
         body: JSON.stringify({
           contents: [{ parts: [{ text: text }] }],
           systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -196,43 +268,35 @@ ${isTutorMode ? `
       });
 
       if (!response.ok) {
-        throw new Error(`Gemini API Error: ${response.statusText}`);
+        const detail = await response.text().catch(() => '');
+        throw new Error(describeApiError('Gemini', response.status, detail));
       }
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder('utf-8');
       let fullAccumulated = '';
       let translationResult = '';
+      let ttftMs: number | undefined;
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const jsonStr = line.replace('data: ', '').trim();
-                if (!jsonStr || jsonStr === '[DONE]') continue;
-                const data = JSON.parse(jsonStr);
-                const textChunk = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                
-                fullAccumulated += textChunk;
-
-                if (!isTutorMode) {
-                  translationResult = fullAccumulated;
-                  if (req.onChunk) {
-                    req.onChunk(textChunk, translationResult);
-                  }
-                }
-              } catch {
-                // Ignore parse chunk errors
-              }
-            }
+      if (response.body) {
+        // ★ FIX (P0-2): buffered SSE reader — a `data:` line split across two
+        // network chunks used to be dropped, losing tokens mid-translation.
+        await readSseStream(response.body, (payload) => {
+          let textChunk = '';
+          try {
+            const data = JSON.parse(payload);
+            textChunk = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          } catch (parseErr) {
+            console.warn('Gemini SSE payload parse failed:', parseErr);
+            return;
           }
-        }
+          if (!textChunk) return;
+
+          ttftMs ??= Math.round(performance.now() - startTime);
+          fullAccumulated += textChunk;
+          if (!isTutorMode) {
+            translationResult = fullAccumulated;
+            req.onChunk?.(textChunk, translationResult);
+          }
+        }, req.signal);
       }
 
       const latencyMs = Math.round(performance.now() - startTime);
@@ -248,12 +312,16 @@ ${isTutorMode ? `
             cleanedSourceText: text,
             learningDetails: parsed.learning,
             latencyMs,
+            ttftMs,
+            engineUsed: req.settings.engine,
           };
         } catch {
           return {
             translatedText: fullAccumulated,
             cleanedSourceText: text,
             latencyMs,
+            ttftMs,
+            engineUsed: req.settings.engine,
           };
         }
       }
@@ -262,10 +330,13 @@ ${isTutorMode ? `
         translatedText: translationResult.trim(),
         cleanedSourceText: text,
         latencyMs,
+        ttftMs,
+        engineUsed: req.settings.engine,
       };
     } catch (err) {
-      console.warn('Gemini stream failed, falling back to smart fallback:', err);
-      return this.translateWithSmartFallback(text, req, startTime);
+      if (isAbortError(err)) throw err;
+      console.warn('Gemini request failed, using the built-in engine:', err);
+      return this.translateWithSmartFallback(text, req, startTime, errorMessage(err));
     }
   }
 
@@ -280,7 +351,10 @@ ${isTutorMode ? `
     historyPrompt: string,
     startTime: number
   ): Promise<TranslateResult> {
-    const endpoint = 'https://api.openai.com/v1/chat/completions';
+    const proxy = normalizeProxyUrl(req.settings.proxyUrl);
+    const endpoint = proxy
+      ? `${proxy}/openai/chat/completions`
+      : 'https://api.openai.com/v1/chat/completions';
     const isTutorMode = req.mode === 'tutor';
     const pragmaticsGuidance = this.getPragmaticsGuidance(req.sourceLang, req.targetLang);
 
@@ -295,10 +369,13 @@ ${isTutorMode ? 'Respond in JSON with translation, learning details (naturalAlte
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${req.settings.openaiApiKey}`,
-        },
+        signal: req.signal,
+        headers: proxy
+          ? { 'Content-Type': 'application/json' }
+          : {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${req.settings.openaiApiKey}`,
+            },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           messages: [
@@ -310,34 +387,33 @@ ${isTutorMode ? 'Respond in JSON with translation, learning details (naturalAlte
         }),
       });
 
-      if (!response.ok) throw new Error(`OpenAI Error: ${response.statusText}`);
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        throw new Error(describeApiError('OpenAI', response.status, detail));
+      }
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder('utf-8');
       let fullAccumulated = '';
+      let ttftMs: number | undefined;
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ') && !line.includes('[DONE]')) {
-              try {
-                const data = JSON.parse(line.replace('data: ', ''));
-                const content = data.choices?.[0]?.delta?.content || '';
-                fullAccumulated += content;
-                if (!isTutorMode && req.onChunk) {
-                  req.onChunk(content, fullAccumulated);
-                }
-              } catch {
-                // Ignore parse errors
-              }
-            }
+      if (response.body) {
+        // ★ FIX (P0-2): buffered SSE reader (see Gemini path above).
+        await readSseStream(response.body, (payload) => {
+          let content = '';
+          try {
+            const data = JSON.parse(payload);
+            content = data.choices?.[0]?.delta?.content || '';
+          } catch (parseErr) {
+            console.warn('OpenAI SSE payload parse failed:', parseErr);
+            return;
           }
-        }
+          if (!content) return;
+
+          ttftMs ??= Math.round(performance.now() - startTime);
+          fullAccumulated += content;
+          if (!isTutorMode) {
+            req.onChunk?.(content, fullAccumulated);
+          }
+        }, req.signal);
       }
 
       const latencyMs = Math.round(performance.now() - startTime);
@@ -351,9 +427,14 @@ ${isTutorMode ? 'Respond in JSON with translation, learning details (naturalAlte
             cleanedSourceText: text,
             learningDetails: parsed.learning,
             latencyMs,
+            ttftMs,
+            engineUsed: req.settings.engine,
           };
         } catch {
-          return { translatedText: fullAccumulated, cleanedSourceText: text, latencyMs };
+          return {
+            translatedText: fullAccumulated, cleanedSourceText: text, latencyMs, ttftMs,
+            engineUsed: req.settings.engine,
+          };
         }
       }
 
@@ -361,10 +442,13 @@ ${isTutorMode ? 'Respond in JSON with translation, learning details (naturalAlte
         translatedText: fullAccumulated.trim(),
         cleanedSourceText: text,
         latencyMs,
+        ttftMs,
+        engineUsed: req.settings.engine,
       };
     } catch (err) {
-      console.warn('OpenAI stream failed, using smart fallback:', err);
-      return this.translateWithSmartFallback(text, req, startTime);
+      if (isAbortError(err)) throw err;
+      console.warn('OpenAI request failed, using the built-in engine:', err);
+      return this.translateWithSmartFallback(text, req, startTime, errorMessage(err));
     }
   }
 
@@ -374,13 +458,14 @@ ${isTutorMode ? 'Respond in JSON with translation, learning details (naturalAlte
   private async translateWithSmartFallback(
     text: string,
     req: TranslateRequest,
-    startTime: number
+    startTime: number,
+    fallbackReason?: string
   ): Promise<TranslateResult> {
     const sl = req.sourceLang.split('-')[0] || 'auto';
     const tl = req.targetLang.split('-')[0] || 'en';
 
-    // 1. Check Idiom Map for exact or partial cultural match
-    let matchedIdiom = this.findMatchingIdiom(text);
+    // 1. Culturally-specific phrases that machine translation reliably mangles.
+    const matchedIdiom = this.findMatchingIdiom(text);
     let rawTranslation = '';
 
     if (matchedIdiom) {
@@ -388,7 +473,8 @@ ${isTutorMode ? 'Respond in JSON with translation, learning details (naturalAlte
     } else {
       try {
         const res = await fetch(
-          `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`
+          `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`,
+          { signal: req.signal }
         );
         if (res.ok) {
           const data = await res.json();
@@ -397,6 +483,7 @@ ${isTutorMode ? 'Respond in JSON with translation, learning details (naturalAlte
           }
         }
       } catch (e) {
+        if (isAbortError(e)) throw e;
         console.warn('Translate fetch error:', e);
       }
     }
@@ -405,32 +492,56 @@ ${isTutorMode ? 'Respond in JSON with translation, learning details (naturalAlte
       rawTranslation = text;
     }
 
-    // 2. Polish nuance, mode styling, and fix pronouns
-    let styledTranslation = this.polishNuanceAndPronouns(rawTranslation, text, req.mode);
+    /*
+     * NOTE: there is deliberately no style/nuance post-processing here.
+     *
+     * This path used to run regex "polish" over the machine translation, which
+     * corrupted output more often than it helped:
+     *   - academic mode rewrote every `good` to `favorable`, turning
+     *     "Good morning" into "favorable morning";
+     *   - the `~잖아` rule matched an optional group, so it prefixed
+     *     "You know," to literally every sentence.
+     * Style belongs to the AI engines, whose prompts already carry the mode
+     * guidance. The built-in engine translates; it does not pretend to style.
+     */
+    const styledTranslation = applyGlossaryToText(rawTranslation, req.glossary);
 
-    // 3. Apply Custom Glossary
-    if (req.glossary.length > 0) {
-      for (const item of req.glossary) {
-        if (item.sourceTerm && item.targetTerm) {
-          const reg = new RegExp(`\\b${item.sourceTerm}\\b`, 'gi');
-          styledTranslation = styledTranslation.replace(reg, item.targetTerm);
-        }
-      }
-    }
-
-    // 4. Fast typing simulation
+    // 2. Fast typing simulation
+    const ttftMs = Math.round(performance.now() - startTime);
     if (req.onChunk) {
-      await this.simulateTypingStream(styledTranslation, req.onChunk);
+      await this.simulateTypingStream(styledTranslation, req.onChunk, req.signal);
     }
 
     const latencyMs = Math.round(performance.now() - startTime);
-    const learningDetails = this.generateLearningDetails(styledTranslation, text, req.mode);
 
     return {
       translatedText: styledTranslation,
       cleanedSourceText: text,
-      learningDetails,
+      // No `learningDetails`: the built-in engine cannot analyse vocabulary.
+      // It used to emit every 4+ letter word with a fabricated IPA (the word
+      // itself in slashes) and the placeholder gloss "주요 핵심 어휘 및 표현",
+      // which presented invented data to a learner as analysis.
+      learningDetails: this.buildIdiomNote(text),
       latencyMs,
+      ttftMs,
+      engineUsed: 'builtin',
+      fallbackReason,
+    };
+  }
+
+  /**
+   * The one genuinely-derived learning note the built-in engine can offer: the
+   * cultural idiom entry that matched, if any. Everything else requires an LLM.
+   */
+  private buildIdiomNote(sourceText: string): LearningDetail | undefined {
+    const trimmed = sourceText.trim();
+    const entry = KOREAN_IDIOM_MAP.find(e => e.pattern.test(trimmed));
+    if (!entry) return undefined;
+
+    return {
+      keyVocabulary: [],
+      naturalAlternative: entry.replacement,
+      grammarTip: `${entry.hint} — 이 표현은 직역이 어려워 영어권에서 쓰는 대응 표현으로 옮겼습니다.`,
     };
   }
 
@@ -448,162 +559,25 @@ ${isTutorMode ? 'Respond in JSON with translation, learning details (naturalAlte
   }
 
   /**
-   * Polish nuance, mode styling, and fix common pronoun mismatches
-   */
-  private polishNuanceAndPronouns(englishText: string, originalKorean: string, mode: TranslationMode): string {
-    let output = englishText.trim();
-    if (!output) return output;
-
-    // Korean nuance endings pattern post-processing
-    if (/잖아(요)?\b/.test(originalKorean) && !/^(you know|as you know|remember)/i.test(output)) {
-      output = output.replace(/^(I |You |We )?/i, 'You know, $&');
-    } else if (/(더라고요|더군요|더라고|던데요)\b/.test(originalKorean) && !/^(I found|I noticed|it turned out)/i.test(output)) {
-      output = output.replace(/^(I |It )/i, 'I found out that $&');
-    } else if (/(거든|거든요)\b/.test(originalKorean) && !/^(Because|You see|The thing is)/i.test(output)) {
-      output = 'You see, ' + output.charAt(0).toLowerCase() + output.slice(1);
-    } else if (/(텐데|을 텐데|ㄹ 텐데)\b/.test(originalKorean) && !/worried|afraid|supposed|wonder/i.test(output)) {
-      output = output.replace(/\.$/, '') + ", though.";
-    } else if (/(을래|ㄹ래|을래요|ㄹ래요)\?/.test(originalKorean) && !/^(do you want|how about|would you)/i.test(output)) {
-      output = output.replace(/^(Are you going to|Will you)/i, 'Would you like to');
-    }
-
-    // Apply Mode Polish
-    switch (mode) {
-      case 'academic':
-        output = output.replace(/\b(get|got)\b/gi, 'obtain')
-                       .replace(/\b(good)\b/gi, 'favorable')
-                       .replace(/\b(big)\b/gi, 'substantial')
-                       .replace(/\b(make sure)\b/gi, 'ensure')
-                       .replace(/\b(look at)\b/gi, 'investigate');
-        break;
-      case 'literature':
-        if (!output.endsWith('.') && !output.endsWith('!') && !output.endsWith('?')) output += '.';
-        break;
-      case 'journalism':
-        output = output.replace(/^and\s+/i, '').replace(/^but\s+/i, '');
-        break;
-      case 'business':
-        if (output.toLowerCase().startsWith('please ')) {
-          output = 'We would appreciate if you could ' + output.slice(7);
-        } else if (output.toLowerCase().startsWith('give me ')) {
-          output = 'Could you please provide ' + output.slice(8);
-        }
-        break;
-      case 'daily':
-        output = output.replace(/\b(I would like to)\b/gi, "I'd love to")
-                       .replace(/\b(Do not)\b/gi, "Don't")
-                       .replace(/\b(Cannot)\b/gi, "Can't")
-                       .replace(/\b(I am)\b/gi, "I'm");
-        break;
-      default:
-        break;
-    }
-
-    return output;
-  }
-
-  /**
    * Fast typing stream simulation for smooth visual rendering
    */
   private async simulateTypingStream(
     fullText: string,
-    onChunk: (chunk: string, accumulated: string) => void
+    onChunk: (chunk: string, accumulated: string) => void,
+    signal?: AbortSignal
   ): Promise<void> {
     const words = fullText.split(' ');
     let current = '';
-    
+
     for (let i = 0; i < words.length; i++) {
+      // Stop painting a superseded translation the moment a newer one starts.
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
       const word = words[i] + (i === words.length - 1 ? '' : ' ');
       current += word;
       onChunk(word, current);
       await new Promise(r => setTimeout(r, 16)); // ultra snappy 16ms word stream
     }
-  }
-
-  /**
-   * Generate contextual learning breakdown with accurate nuance advice and cultural notes
-   */
-  private generateLearningDetails(
-    translatedText: string,
-    originalText: string,
-    mode: TranslationMode
-  ): LearningDetail {
-    const words = translatedText
-      .replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, '')
-      .split(/\s+/)
-      .filter(w => w.length >= 4);
-
-    const uniqueWords = Array.from(new Set(words)).slice(0, 4);
-
-    const vocabularyList = uniqueWords.map(word => {
-      const lower = word.toLowerCase();
-      return {
-        word: word,
-        meaning: this.getWordMeaningHint(lower),
-        ipa: `/${lower}/`,
-        pos: 'adj./n./v.',
-        example: `Native context: "${translatedText}"`,
-      };
-    });
-
-    let naturalAlt = `Native Spoken: "${translatedText.replace(/\b(I think that)\b/i, 'I feel like').replace(/\b(very)\b/i, 'super')}"`;
-    let grammarTip = `[${mode.toUpperCase()} 모드 핵심]: 원어민은 이 문맥에서 간결한 어순과 자연스러운 동사 연어를 선호합니다.`;
-
-    // Rich contextual nuance feedback
-    if (/잖아/.test(originalText)) {
-      naturalAlt = `Nuance Tip: "You know, ${translatedText.toLowerCase()}" (상대방도 아는 사실 상기)`;
-      grammarTip = `'~잖아'의 뉘앙스를 살릴 때 원어민은 문두에 'You know,' 또는 'As you know,'를 자연스럽게 덧붙입니다.`;
-    } else if (/더라고/.test(originalText)) {
-      naturalAlt = `Nuance Tip: "I noticed that ${translatedText.toLowerCase()}" (직접 경험한 사실 전달)`;
-      grammarTip = `'~더라고(요)'는 본인이 직접 겪어 알게 된 사실을 말하므로 'I noticed' 또는 'It turned out'이 가장 어울립니다.`;
-    } else if (/거든/.test(originalText)) {
-      naturalAlt = `Nuance Tip: "You see, ${translatedText.toLowerCase()}" (배경/이유 설명)`;
-      grammarTip = `'~거든(요)'는 상대방이 모르는 배경 이유를 친근하게 설명할 때 쓰며 'You see,' 또는 'The thing is,'로 표현합니다.`;
-    } else if (/눈치/.test(originalText)) {
-      naturalAlt = `Idiom Tip: "read the room" (분위기를 파악하다) / "walk on eggshells" (눈치를 살피다)`;
-      grammarTip = `'눈치'는 영어에 1:1 단어가 없으므로 분위기 파악은 'read the room', 조심스럽게 행동할 때는 'walk on eggshells'를 씁니다.`;
-    } else if (/부담/.test(originalText)) {
-      naturalAlt = `Collocation: "No pressure at all!" / "Don't feel obligated."`;
-      grammarTip = `'부담 갖지 마세요'는 영어권에서 'No pressure at all'이 가장 널리 쓰이는 자연스러운 표현입니다.`;
-    } else if (/어쩔 수/.test(originalText)) {
-      naturalAlt = `Native Idiom: "It is what it is." (상황을 있는 그대로 수용할 때)`;
-      grammarTip = `'어쩔 수 없지'는 체념과 수용의 뉘앙스로 'It is what it is'가 완벽한 대응 표현입니다.`;
-    }
-
-    return {
-      keyVocabulary: vocabularyList,
-      naturalAlternative: naturalAlt,
-      grammarTip: grammarTip,
-      shadowingTip: '첫 단어의 강세를 살리고 끝 단어를 자연스럽게 하강조로 마무리해 보세요.',
-      difficultyLevel: words.length > 8 ? 'Advanced' : 'Intermediate',
-    };
-  }
-
-  private getWordMeaningHint(word: string): string {
-    const dict: Record<string, string> = {
-      translation: '번역, 변환',
-      simultaneous: '동시의, 일제히 일어나는',
-      conference: '컨퍼런스, 학술회의',
-      academic: '학술의, 논문 수준의',
-      literature: '문학, 서정적 글',
-      journalism: '저널리즘, 언론 보도',
-      business: '비즈니스, 업무',
-      empirical: '실증적인, 경험에 기초한',
-      significant: '유의미한, 중대한',
-      correlation: '상관관계, 연관성',
-      appreciate: '감사하다, 높이 평가하다',
-      collaborate: '협력하다, 공동 작업하다',
-      perspective: '관점, 시각',
-      essential: '필수적인, 극히 중요한',
-      noticed: '알아차린, 인지한',
-      alternative: '대안, 대체 가능한',
-      pressure: '압박, 부담감',
-      obligated: '의무가 있는, 부담을 느끼는',
-      investigate: '조사하다, 연구하다',
-      substantial: '상당한, 실질적인',
-      generous: '후한, 손이 큰',
-    };
-    return dict[word] || '주요 핵심 어휘 및 표현';
   }
 }
 

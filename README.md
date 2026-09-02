@@ -34,8 +34,10 @@
   * '음...', '어...', '그...', '저기...', 'like, you know, um, uh' 등 불필요한 군더더기를 실시간으로 필터링하여 매끄러운 완성형 문장 생성.
 * 📖 **전문 용어집 및 번역 메모리 (Custom Glossary & TM):**
   * 인명, 회사명, IT/의료/금융 전문 고유명사를 사전 등록하여 번역 시 강제 매핑 및 오역 차단.
-* 📱 **청중 실시간 자막 화면 (Audience Broadcast QR):**
-  * 청중이 스마트폰으로 QR 코드를 스캔하여 원하는 언어(영어, 일본어, 중국어 등)로 실시간 자막을 시청하는 컨퍼런스 룸 기능.
+* 🖥️ **청중 자막 화면 공유 (Audience Subtitle Window):**
+  * 발표자 화면과 별개로 큰 자막 전용 창을 열어 보조 모니터나 프로젝터에 띄웁니다. 링크(및 QR)로 새 창을 열면 발표 자막이 실시간으로 이어집니다.
+  * 자막 창에서 수신 언어를 직접 고를 수 있으며, 발표자의 번역 언어와 다르면 그 창이 원문을 직접 번역합니다.
+  * **범위:** 정적 배포(서버 없음) 특성상 `BroadcastChannel`을 사용하므로 **같은 브라우저의 다른 탭/창에서만** 연결됩니다. 다른 기기(휴대폰)로는 연결되지 않으며, 자막은 기기 밖으로 전송되지 않습니다.
 * 💾 **히스토리 내보내기:** Markdown(.md), Text(.txt), CSV 포맷 지원.
 
 ---
@@ -46,9 +48,10 @@
 * **Icons & Animation:** Lucide React, Canvas Confetti
 * **Audio & STT:** Web Speech API (`webkitSpeechRecognition`), Web Audio API (`AudioContext`, `AnalyserNode`)
 * **AI Engine:**
-  * **Gemini 2.0 Flash / Gemini 1.5 Flash** (SSE 스트리밍)
+  * **Gemini 2.5 Flash / 2.5 Flash-Lite / 2.0 Flash** (SSE 스트리밍)
   * **OpenAI GPT-4o-mini**
-  * **Smart Local Engine** (API 키 없이 브라우저에서 즉시 0비용 사용 가능)
+  * **내장 엔진** (키 없이 즉시 사용, 품질·속도 미보장)
+* **Key 보관:** Cloudflare Worker 프록시 (`worker/`) — 키가 브라우저에 노출되지 않음
 * **Speech Synthesis:** Web SpeechSynthesis API with variable rates (0.75x ~ 1.25x)
 
 ---
@@ -73,7 +76,29 @@ npm run build
 
 ---
 
-## 🔑 AI 엔진 설정 안내 (선택 사항)
+## 🔑 AI 엔진 설정 (두 가지 방법)
 
-1. 앱 우측 상단 **[설정(⚙️)]** 아이콘 클릭
-2. **Gemini 2.0 Flash** 선택 후 [Google AI Studio](https://aistudio.google.com/app/apikey)에서 발급받은 무료 API Key 입력 (입력하지 않아도 내장 스마트 엔진으로 즉시 작동합니다).
+### 방법 1 — 번역 프록시 (권장)
+
+API 키를 서버에 두고 브라우저에는 노출하지 않는 방식입니다. 배포해 두면 **방문자는 아무것도 입력하지 않아도** AI 번역을 쓸 수 있습니다.
+
+Cloudflare Worker 하나만 배포하면 되며, 무료 플랜으로 충분합니다.
+자세한 절차는 **[`worker/README.md`](worker/README.md)** 를 참고하세요 (약 5분).
+
+배포 후 GitHub 저장소 → Settings → Secrets and variables → Actions → **Variables** 에
+`PROXY_URL` 로 Worker 주소를 등록하면 빌드에 자동 반영됩니다.
+
+### 방법 2 — 개인 API 키 직접 입력
+
+앱 우측 상단 **[설정(⚙️)]** → 엔진 선택 후 [Google AI Studio](https://aistudio.google.com/app/apikey)에서 발급받은 무료 키를 입력합니다.
+
+> ⚠️ 이 방식은 키가 **브라우저에 저장되고 브라우저에서 직접 제공사로 전송**됩니다. 공용 PC에서는 사용하지 마세요.
+
+### 키가 없을 때 (내장 엔진)
+
+키도 프록시도 없으면 내장 엔진으로 자동 전환됩니다. 즉시 쓸 수 있지만 한계가 분명합니다.
+
+- 공개 번역 서비스를 브라우저에서 직접 호출하므로 **응답이 수 초까지 느려지거나 차단**될 수 있습니다.
+- **번역 모드(문학·학술 등)와 학습 분석이 적용되지 않습니다.** 이 기능들은 AI 엔진에서만 동작합니다.
+
+AI 엔진 호출이 실패하면 조용히 넘어가지 않고 화면에 사유를 표시한 뒤 내장 엔진으로 전환합니다.

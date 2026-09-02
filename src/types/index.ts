@@ -34,7 +34,12 @@ export interface TranslationItem {
   learningDetails?: LearningDetail;
   isBookmarked?: boolean;
   isStreaming?: boolean;
+  /** Total time until the translation finished streaming. */
   latencyMs?: number;
+  /** Time to first token — what the viewer actually perceives as the delay. */
+  ttftMs?: number;
+  /** Which engine actually produced this translation. */
+  engineUsed?: AppSettings['engine'] | 'builtin';
 }
 
 export interface GlossaryItem {
@@ -53,12 +58,19 @@ export interface LanguageOption {
 }
 
 export interface AppSettings {
+  /**
+   * Base URL of a translation proxy that holds the API keys server-side.
+   * When set, no API key is sent from (or stored in) the browser.
+   */
+  proxyUrl: string;
   geminiApiKey: string;
   openaiApiKey: string;
-  engine: 'gemini-2.0-flash' | 'gemini-1.5-flash' | 'gpt-4o-mini' | 'smart-local';
+  engine: 'gemini-2.5-flash' | 'gemini-2.5-flash-lite' | 'gemini-2.0-flash' | 'gpt-4o-mini' | 'smart-local';
   autoTts: boolean;
   ttsSpeed: number; // 0.75, 1.0, 1.25, 1.5
   disfluencyFilter: boolean; // 말버릇 정제 on/off
+  /** Translate the interim transcript before the utterance ends. */
+  speculativeTranslation: boolean;
   fontSize: 'sm' | 'base' | 'lg' | 'xl';
   bilingualDisplay: boolean;
   highContrastSubtitles: boolean;

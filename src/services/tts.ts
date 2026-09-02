@@ -6,6 +6,16 @@ class TTSService {
   private synth: SpeechSynthesis | null = null;
   private voices: SpeechSynthesisVoice[] = [];
   private isInitialized = false;
+  private activeSettle: (() => void) | null = null;
+  private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * ★ P0-4 barge-in gate. The app registers a mic suspend/resume pair once, and
+   * EVERY playback path (auto-TTS, the 0.75x/1.25x buttons, shadowing) then mutes
+   * the mic for its duration — otherwise the recogniser transcribes our own
+   * synthesised speech and the app translates itself in a loop.
+   */
+  private gate: { onStart: () => void; onEnd: () => void } | null = null;
+  private gateDepth = 0;
 
   constructor() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -15,6 +25,21 @@ class TTSService {
         this.synth.onvoiceschanged = () => this.loadVoices();
       }
     }
+  }
+
+  public setPlaybackGate(gate: { onStart: () => void; onEnd: () => void } | null) {
+    this.gate = gate;
+  }
+
+  private openGate() {
+    this.gateDepth++;
+    if (this.gateDepth === 1) this.gate?.onStart();
+  }
+
+  private closeGate() {
+    if (this.gateDepth === 0) return;
+    this.gateDepth = 0;
+    this.gate?.onEnd();
   }
 
   private loadVoices() {
@@ -64,20 +89,48 @@ class TTSService {
       utterance.voice = preferredVoice;
     }
 
-    if (options.onEnd) {
-      utterance.onend = options.onEnd;
-    }
-    if (options.onError) {
-      utterance.onerror = options.onError;
-    }
+    // Guarantee exactly one settle callback: `onEnd` must fire on error and on
+    // cancel too, otherwise a caller that paused the mic for playback (barge-in
+    // protection) would never resume it.
+    let settled = false;
+    const settle = (err?: unknown) => {
+      if (settled) return;
+      settled = true;
+      this.closeGate();
+      if (err !== undefined) options.onError?.(err);
+      options.onEnd?.();
+    };
 
+    utterance.onend = () => settle();
+    utterance.onerror = (event) => settle(event);
+
+    // Ordering matters: `this.stop()` above already settled (and un-gated) any
+    // previous utterance, so we open the gate only now, for this one.
+    this.openGate();
+    this.activeSettle = settle;
     this.synth.speak(utterance);
+
+    // Chrome occasionally drops `onend` for long utterances; a watchdog based on
+    // a rough speaking-rate estimate keeps the mic from staying muted forever.
+    const estimatedMs = (cleanText.length / 12) * 1000 / (utterance.rate || 1) + 3000;
+    if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
+    this.watchdogTimer = setTimeout(() => {
+      if (this.synth && !this.synth.speaking) settle();
+    }, estimatedMs);
   }
 
   public stop(): void {
-    if (this.synth && this.synth.speaking) {
+    if (this.watchdogTimer) {
+      clearTimeout(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+    if (this.synth && (this.synth.speaking || this.synth.pending)) {
       this.synth.cancel();
     }
+    // `cancel()` does not reliably fire `onend` — settle manually.
+    const settle = this.activeSettle;
+    this.activeSettle = null;
+    settle?.();
   }
 
   public isSpeaking(): boolean {

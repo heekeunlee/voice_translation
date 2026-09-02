@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   Volume2, 
@@ -13,6 +13,9 @@ import confetti from 'canvas-confetti';
 import type { TranslationItem } from '../types';
 import { ttsService } from '../services/tts';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
+import { scoreShadowing } from '../utils/shadowingScore';
+import type { ShadowingResult } from '../utils/shadowingScore';
+import { SUPPORTED_LANGUAGES } from '../constants';
 
 interface ShadowingModalProps {
   isOpen: boolean;
@@ -25,63 +28,62 @@ export const ShadowingModal: React.FC<ShadowingModalProps> = ({
   item,
   onClose,
 }) => {
-  const [recordedSpokenText, setRecordedSpokenText] = useState('');
-  const [similarityScore, setSimilarityScore] = useState<number | null>(null);
+  // One attempt object tagged with the sentence it belongs to, so opening a
+  // different sentence simply stops matching instead of needing a reset effect.
+  const [attempt, setAttempt] = useState<
+    { itemId: string; spoken: string; result: ShadowingResult } | null
+  >(null);
   const [speed, setSpeed] = useState(1.0);
+
+  // Practise in the language the sentence is actually written in. Hardcoding
+  // en-US meant shadowing a Japanese or Chinese translation listened in English
+  // and always scored zero.
+  const practiceLang = item?.targetLang || 'en-US';
+  const activeItemRef = useRef(item);
+  useEffect(() => {
+    activeItemRef.current = item;
+  }, [item]);
 
   const {
     isListening,
     startListening,
     stopListening,
   } = useSpeechRecognition({
-    lang: 'en-US',
+    lang: practiceLang,
     onFinalTranscript: (text) => {
-      setRecordedSpokenText(text);
-      if (item?.translatedText) {
-        const score = calculateSimilarity(item.translatedText, text);
-        setSimilarityScore(score);
-        if (score >= 80) {
-          confetti({
-            particleCount: 80,
-            spread: 60,
-            origin: { y: 0.6 }
-          });
-        }
+      const active = activeItemRef.current;
+      if (!active?.translatedText) return;
+
+      const scored = scoreShadowing(active.translatedText, text);
+      setAttempt({ itemId: active.id, spoken: text, result: scored });
+      if (scored.score >= 80) {
+        confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
       }
     },
   });
 
   useEffect(() => {
-    if (!isOpen) {
-      setRecordedSpokenText('');
-      setSimilarityScore(null);
-      stopListening();
-    }
+    if (isOpen) return;
+    stopListening();
   }, [isOpen, stopListening]);
 
   if (!isOpen || !item) return null;
 
+  // An attempt from a previously opened sentence is simply not shown.
+  const currentAttempt = attempt?.itemId === item.id ? attempt : null;
+  const recordedSpokenText = currentAttempt?.spoken ?? '';
+  const result = currentAttempt?.result ?? null;
+
+  const langLabel =
+    SUPPORTED_LANGUAGES.find(l => l.speechCode === practiceLang)?.name.split(' ')[0]
+    ?? practiceLang;
+
   const handlePlayTTS = (playSpeed = speed) => {
     setSpeed(playSpeed);
     ttsService.speak(item.translatedText, {
-      lang: 'en-US',
+      lang: practiceLang,
       rate: playSpeed,
     });
-  };
-
-  const calculateSimilarity = (target: string, spoken: string): number => {
-    const cleanT = target.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim().split(/\s+/);
-    const cleanS = spoken.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim().split(/\s+/);
-
-    if (cleanT.length === 0 || cleanS.length === 0) return 0;
-
-    let matchCount = 0;
-    cleanT.forEach(word => {
-      if (cleanS.includes(word)) matchCount++;
-    });
-
-    const ratio = matchCount / Math.max(cleanT.length, cleanS.length);
-    return Math.min(100, Math.round(ratio * 100));
   };
 
   return (
@@ -112,7 +114,7 @@ export const ShadowingModal: React.FC<ShadowingModalProps> = ({
         {/* Target Sentence Card */}
         <div className="rounded-2xl bg-gradient-to-br from-indigo-50/90 to-purple-50 border border-indigo-200 p-5 mb-5 shadow-xs">
           <div className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-indigo-500" /> 목표 문장 (Target English)
+            <Sparkles className="w-3.5 h-3.5 text-indigo-500" /> 목표 문장 ({langLabel})
           </div>
           <div className="text-gray-900 text-xl sm:text-2xl font-bold leading-relaxed tracking-tight mb-3">
             {item.translatedText}
@@ -158,7 +160,7 @@ export const ShadowingModal: React.FC<ShadowingModalProps> = ({
         {/* User Recording Area */}
         <div className="rounded-2xl bg-gray-50 border border-gray-200 p-5 mb-5 text-center">
           <div className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-3">
-            나의 발음 녹음 & 일치도 분석
+            따라 말하기 &amp; 단어 대조
           </div>
 
           <div className="min-h-[50px] flex items-center justify-center mb-4">
@@ -168,7 +170,9 @@ export const ShadowingModal: React.FC<ShadowingModalProps> = ({
               </span>
             ) : (
               <span className="text-gray-400 text-sm">
-                {isListening ? '듣고 있는 중입니다... 문장을 따라 말씀하세요.' : '아래 버튼을 누르고 따라 말해보세요.'}
+                {isListening
+                  ? `듣고 있습니다… ${langLabel}(으)로 문장을 따라 말씀하세요.`
+                  : '아래 버튼을 누르고 따라 말해보세요.'}
               </span>
             )}
           </div>
@@ -197,23 +201,72 @@ export const ShadowingModal: React.FC<ShadowingModalProps> = ({
             </button>
           </div>
 
-          {/* Similarity Score */}
-          {similarityScore !== null && (
-            <div className="mt-5 p-4 rounded-xl bg-white border border-gray-200 flex items-center justify-between shadow-xs">
-              <div className="flex items-center gap-2">
-                <Award className={`w-5 h-5 ${similarityScore >= 80 ? 'text-amber-500' : 'text-gray-400'}`} />
-                <span className="text-xs font-bold text-gray-700">발음 일치율:</span>
+          {/* Recognition match — deliberately NOT called a pronunciation score. */}
+          {result && (
+            <div className="mt-5 p-4 rounded-xl bg-white border border-gray-200 shadow-xs text-left">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Award className={`w-5 h-5 ${result.score >= 80 ? 'text-amber-500' : 'text-gray-400'}`} />
+                  <span
+                    className="text-xs font-bold text-gray-700 border-b border-dotted border-gray-400 cursor-help"
+                    title="음성 인식이 목표 문장과 같은 단어를 같은 순서로 알아들었는지를 나타냅니다. 억양·강세 같은 발음의 질을 평가하는 점수가 아닙니다."
+                  >
+                    인식 일치율
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xl font-extrabold font-mono ${
+                    result.score >= 80 ? 'text-emerald-600' : result.score >= 50 ? 'text-amber-500' : 'text-rose-600'
+                  }`}>
+                    {result.score}%
+                  </span>
+                  <span className="text-[11px] text-gray-500 font-medium">
+                    {result.matched}/{result.targetCount} 단어 일치
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-xl font-extrabold font-mono ${
-                  similarityScore >= 80 ? 'text-emerald-600' : similarityScore >= 50 ? 'text-amber-500' : 'text-rose-600'
-                }`}>
-                  {similarityScore}%
-                </span>
-                <span className="text-xs text-gray-500">
-                  {similarityScore >= 80 ? '🎉 훌륭해요! 원어민 수준입니다.' : '💪 조금 더 억양을 살려보세요!'}
-                </span>
+
+              {/* Word-level comparison: what actually differed. */}
+              <div className="space-y-2">
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">목표 문장</p>
+                  <p className="text-sm leading-relaxed flex flex-wrap gap-x-1.5 gap-y-1">
+                    {result.target.map((tok, idx) => (
+                      <span
+                        key={`t-${idx}`}
+                        className={tok.status === 'match'
+                          ? 'text-gray-800'
+                          : 'text-rose-600 font-semibold underline decoration-rose-300 decoration-2 underline-offset-2'}
+                        title={tok.status === 'match' ? undefined : '이 단어가 인식되지 않았습니다'}
+                      >
+                        {tok.text}
+                      </span>
+                    ))}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">인식된 발화</p>
+                  <p className="text-sm leading-relaxed flex flex-wrap gap-x-1.5 gap-y-1">
+                    {result.spoken.map((tok, idx) => (
+                      <span
+                        key={`s-${idx}`}
+                        className={tok.status === 'match'
+                          ? 'text-gray-800'
+                          : 'text-amber-600 font-semibold'}
+                        title={tok.status === 'match' ? undefined : '목표 문장에 없는 단어입니다'}
+                      >
+                        {tok.text}
+                      </span>
+                    ))}
+                  </p>
+                </div>
               </div>
+
+              <p className="mt-3 text-[11px] text-gray-500">
+                {result.score >= 80
+                  ? '🎉 목표 문장대로 또렷하게 전달됐습니다.'
+                  : '💪 빨간 단어를 또박또박 살려서 다시 말해 보세요.'}
+              </p>
             </div>
           )}
         </div>

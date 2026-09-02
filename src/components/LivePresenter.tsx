@@ -14,7 +14,7 @@ import {
   Flame
 } from 'lucide-react';
 import { LiveWaveVisualizer } from './LiveWaveVisualizer';
-import type { TranslationItem, TranslationMode } from '../types';
+import type { AppSettings, TranslationItem, TranslationMode } from '../types';
 import { TRANSLATION_MODES } from '../constants';
 import { ttsService } from '../services/tts';
 
@@ -25,6 +25,16 @@ interface LivePresenterProps {
   audioFrequencies: number[];
   currentInterimSource: string;
   currentStreamingTranslation: string;
+  /** Speculative translation of the in-progress utterance (P1). */
+  provisionalTranslation: string;
+  /** Language the translation panel is currently rendering. */
+  targetLang: string;
+  /** Subtitle scale for the conference screen. */
+  fontSize: AppSettings['fontSize'];
+  /** Show the source (STT) panel next to the translation. */
+  bilingualDisplay: boolean;
+  /** Dark, high-contrast rendering for projectors and bright rooms. */
+  highContrastSubtitles: boolean;
   isTranslating: boolean;
   latestItem: TranslationItem | null;
   currentMode: TranslationMode;
@@ -33,6 +43,21 @@ interface LivePresenterProps {
   onOpenShadowing: (item: TranslationItem) => void;
 }
 
+/** Subtitle scales, driven by the `fontSize` setting. */
+const TRANSLATION_TEXT_SIZE: Record<AppSettings['fontSize'], string> = {
+  sm: 'text-lg sm:text-xl',
+  base: 'text-xl sm:text-2xl',
+  lg: 'text-2xl sm:text-4xl',
+  xl: 'text-3xl sm:text-5xl',
+};
+
+const SOURCE_TEXT_SIZE: Record<AppSettings['fontSize'], string> = {
+  sm: 'text-sm sm:text-base',
+  base: 'text-lg sm:text-xl',
+  lg: 'text-xl sm:text-2xl',
+  xl: 'text-2xl sm:text-3xl',
+};
+
 export const LivePresenter: React.FC<LivePresenterProps> = ({
   isListening,
   onToggleListening,
@@ -40,6 +65,11 @@ export const LivePresenter: React.FC<LivePresenterProps> = ({
   audioFrequencies,
   currentInterimSource,
   currentStreamingTranslation,
+  provisionalTranslation,
+  targetLang,
+  fontSize,
+  bilingualDisplay,
+  highContrastSubtitles,
   isTranslating,
   latestItem,
   currentMode,
@@ -50,9 +80,24 @@ export const LivePresenter: React.FC<LivePresenterProps> = ({
   const [isCopied, setIsCopied] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
+  const translationSizeClass = TRANSLATION_TEXT_SIZE[fontSize] ?? TRANSLATION_TEXT_SIZE.base;
+  const sourceSizeClass = SOURCE_TEXT_SIZE[fontSize] ?? SOURCE_TEXT_SIZE.base;
+
   const activeModeConfig = TRANSLATION_MODES.find(m => m.id === currentMode) || TRANSLATION_MODES[0];
   const displaySource = currentInterimSource || latestItem?.sourceText || '';
-  const displayTranslation = currentStreamingTranslation || latestItem?.translatedText || '';
+
+  // A provisional translation always wins while it is set: it describes the
+  // sentence being spoken right now, whereas `currentStreamingTranslation` still
+  // holds the previous confirmed one until the new tokens start arriving.
+  const isProvisional = Boolean(provisionalTranslation);
+  const isLiveTranslation = Boolean(provisionalTranslation || currentStreamingTranslation);
+  const displayTranslation =
+    provisionalTranslation || currentStreamingTranslation || latestItem?.translatedText || '';
+
+  // Speak the language of the text actually on screen. When the panel has fallen
+  // back to the previous item, that is the item's own target language, not the
+  // language currently selected in the header.
+  const displayLang = isLiveTranslation ? targetLang : (latestItem?.targetLang ?? targetLang);
 
   const handleCopy = () => {
     if (!displayTranslation) return;
@@ -63,7 +108,8 @@ export const LivePresenter: React.FC<LivePresenterProps> = ({
 
   const handleSpeak = (speed = 1.0) => {
     if (!displayTranslation) return;
-    ttsService.speak(displayTranslation, { rate: speed });
+    // Always pass the language: the service otherwise guesses from the script.
+    ttsService.speak(displayTranslation, { lang: displayLang, rate: speed });
   };
 
   const samplePhrases = [
@@ -95,10 +141,13 @@ export const LivePresenter: React.FC<LivePresenterProps> = ({
               <span>{activeModeConfig.name} 실시간 모드</span>
             </span>
 
-            {latestItem?.latencyMs && (
-              <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 text-[11px] font-mono font-medium">
+            {latestItem?.latencyMs != null && (
+              <span
+                className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 text-[11px] font-mono font-medium"
+                title={`첫 글자까지 ${latestItem.ttftMs ?? latestItem.latencyMs}ms · 전체 완료 ${latestItem.latencyMs}ms`}
+              >
                 <Zap className="w-3 h-3" />
-                <span>{latestItem.latencyMs}ms</span>
+                <span>{latestItem.ttftMs ?? latestItem.latencyMs}ms</span>
               </span>
             )}
 
@@ -119,10 +168,10 @@ export const LivePresenter: React.FC<LivePresenterProps> = ({
         </div>
 
         {/* Dual Screen Display */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-10">
+        <div className={`grid grid-cols-1 gap-6 relative z-10 ${bilingualDisplay ? 'lg:grid-cols-2' : ''}`}>
           
-          {/* Left: Original Speech (STT) */}
-          <div className="flex flex-col justify-between rounded-2xl bg-gray-50 border border-gray-200 p-5 min-h-[190px]">
+          {/* Left: Original Speech (STT) — hidden when bilingual display is off */}
+          <div className={`flex flex-col justify-between rounded-2xl bg-gray-50 border border-gray-200 p-5 min-h-[190px] ${bilingualDisplay ? '' : 'hidden'}`}>
             <div>
               <div className="flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
                 <span className="flex items-center gap-1.5">
@@ -136,7 +185,7 @@ export const LivePresenter: React.FC<LivePresenterProps> = ({
                 )}
               </div>
 
-              <div className="text-gray-800 text-lg sm:text-xl font-medium leading-relaxed break-words min-h-[60px]">
+              <div className={`text-gray-800 ${sourceSizeClass} font-medium leading-relaxed break-words min-h-[60px]`}>
                 {displaySource ? (
                   <span>
                     {displaySource}
@@ -167,14 +216,29 @@ export const LivePresenter: React.FC<LivePresenterProps> = ({
           </div>
 
           {/* Right: Real-time Translated Subtitle */}
-          <div className="flex flex-col justify-between rounded-2xl bg-gradient-to-br from-indigo-50 via-purple-50/30 to-white border border-indigo-200 p-5 min-h-[190px] relative overflow-hidden shadow-inner">
+          <div className={`flex flex-col justify-between rounded-2xl p-5 min-h-[190px] relative overflow-hidden shadow-inner ${
+            highContrastSubtitles
+              ? 'bg-slate-900 border border-slate-700'
+              : 'bg-gradient-to-br from-indigo-50 via-purple-50/30 to-white border border-indigo-200'
+          }`}>
             <div>
-              <div className="flex items-center justify-between text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2">
+              <div className={`flex items-center justify-between text-xs font-bold uppercase tracking-wider mb-2 ${
+                highContrastSubtitles ? 'text-indigo-300' : 'text-indigo-600'
+              }`}>
                 <span className="flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
                   실시간 번역 자막 (타이핑 스트리밍)
+                  {isProvisional && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold normal-case tracking-normal"
+                      title="발화가 끝나기 전에 미리 번역한 결과입니다. 말이 끝나면 최종 번역으로 교체됩니다."
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                      잠정 번역
+                    </span>
+                  )}
                 </span>
-                {displayTranslation && (
+                {displayTranslation && !isProvisional && (
                   <div className="flex items-center gap-1">
                     <button onClick={handleCopy} className="p-1 rounded-lg hover:bg-white text-gray-400 hover:text-gray-600 transition" title="번역 복사">
                       {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -188,14 +252,18 @@ export const LivePresenter: React.FC<LivePresenterProps> = ({
                 )}
               </div>
 
-              <div className="text-gray-900 text-xl sm:text-2xl font-bold leading-relaxed tracking-tight break-words min-h-[60px]">
+              <div className={`${translationSizeClass} font-bold leading-relaxed tracking-tight break-words min-h-[60px] transition-colors duration-200 ${
+                highContrastSubtitles
+                  ? (isProvisional ? 'text-white/50' : 'text-white')
+                  : (isProvisional ? 'text-gray-500' : 'text-gray-900')
+              }`}>
                 {displayTranslation ? (
                   <span>
                     {displayTranslation}
-                    {isTranslating && <span className="inline-block w-2.5 h-6 ml-1.5 bg-pink-500 rounded-sm cursor-blink align-middle shadow-lg shadow-pink-500/30" />}
+                    {(isTranslating || isProvisional) && <span className="inline-block w-2.5 h-6 ml-1.5 bg-pink-500 rounded-sm cursor-blink align-middle shadow-lg shadow-pink-500/30" />}
                   </span>
                 ) : (
-                  <span className="text-gray-300 font-normal italic text-sm">
+                  <span className={`font-normal italic text-sm ${highContrastSubtitles ? 'text-white/30' : 'text-gray-300'}`}>
                     말씀하시면 AI가 초고속으로 번역하여 여기에 실시간 타이핑됩니다.
                   </span>
                 )}

@@ -47,8 +47,10 @@ export const LiveTimeline: React.FC<LiveTimelineProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleSpeak = (text: string, rate = 1.0) => {
-    ttsService.speak(text, { rate });
+  // `lang` is required: without it the service guesses from the script and read
+  // Japanese/Chinese translations aloud with an English voice.
+  const handleSpeak = (text: string, lang: string, rate = 1.0) => {
+    ttsService.speak(text, { lang, rate });
   };
 
   if (items.length === 0) {
@@ -164,14 +166,14 @@ export const LiveTimeline: React.FC<LiveTimelineProps> = ({
                 {/* TTS Speed buttons */}
                 <div className="flex items-center gap-1 shrink-0">
                   <button
-                    onClick={() => handleSpeak(item.translatedText, 1.0)}
+                    onClick={() => handleSpeak(item.translatedText, item.targetLang, 1.0)}
                     className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold flex items-center gap-1 transition border border-indigo-200"
                     title="원어민 발음 듣기 (1.0x)"
                   >
                     <Volume2 className="w-3.5 h-3.5 text-indigo-600" />
                   </button>
                   <button
-                    onClick={() => handleSpeak(item.translatedText, 0.75)}
+                    onClick={() => handleSpeak(item.translatedText, item.targetLang, 0.75)}
                     className="px-1.5 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-600 text-[10px] font-mono transition"
                     title="0.75x 천천히"
                   >

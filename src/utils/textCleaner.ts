@@ -1,18 +1,47 @@
 import type { GlossaryItem } from '../types';
 
-const KOREAN_FILLERS = [
-  /^(어+|음+|그+|저+|저기+|막+|이제+|아+|그니까+|있잖아+|그\s*뭐냐+|약간+)\s+/gi,
-  /\s+(어+|음+|그+|저기+|막+|이제+|그니까+|있잖아+|그\s*뭐냐+|약간+)\s+/gi,
-  /\s+(어+|음+|그+|저기+|막+|이제+|그니까+|있잖아+|그\s*뭐냐+|약간+)$/gi,
-  /\b(어\.\.\.|음\.\.\.|그\.\.\.|아\.\.\.|저기\.\.\.|그니까\.\.\.)\b/gi,
+/**
+ * Disfluency removal is deliberately CONSERVATIVE.
+ *
+ * The previous rules deleted any bare 그/저/이제/막/약간 and every English
+ * `like/actually/basically/literally/honestly/sort of/kind of`, which destroyed
+ * real content:
+ *   "I like this coffee"                 -> "I  this coffee"      (verb deleted)
+ *   "나는 그 사람이 저 차를 봤어"          -> "나는 사람이 차를 봤어"  (determiners deleted)
+ * Those words are only fillers in specific positions, and an LLM already strips
+ * them far more reliably than a regex can. So we now remove only tokens that
+ * cannot be anything but a hesitation sound, and leave the rest to the model.
+ */
+
+/** Pure hesitation sounds: 어/음/으/아/에/어어/으음… standing alone as a token. */
+const KOREAN_HESITATION = '(?:어+|음+|으+음*|아+|에+또?|엄+)';
+
+const KOREAN_FILLERS: RegExp[] = [
+  // Filler followed by an ellipsis / comma anywhere: "어...", "그...", "저기,"
+  new RegExp(`(?:^|\\s)(?:${KOREAN_HESITATION}|그+|저기+|그니까+|그러니까+|있잖아+|그\\s*뭐냐+)\\s*(?:\\.{2,}|…|,)\\s*`, 'g'),
+  // Standalone hesitation sound at the start of the utterance: "음 오늘은"
+  new RegExp(`^\\s*${KOREAN_HESITATION}(?=\\s)\\s*`, 'g'),
+  // Standalone hesitation sound between words: "오늘은 어 좀 춥네"
+  new RegExp(`\\s+${KOREAN_HESITATION}(?=\\s)\\s*`, 'g'),
+  // Trailing hesitation sound: "그래서 음"
+  new RegExp(`\\s+${KOREAN_HESITATION}\\s*$`, 'g'),
 ];
 
-const ENGLISH_FILLERS = [
-  /\b(um+|uh+|er+|ah+|like+|you know+|i mean+|sort of+|kind of+|basically+|actually+|literally+|honestly+)\b[,.]?/gi,
+const ENGLISH_FILLERS: RegExp[] = [
+  // Non-lexical sounds only — these are never content words.
+  /(?:^|\s)(?:u+m+|u+h+|e+r+m?|a+h+|hm+|mhm+|erm+)\b[,.]?/gi,
+  // Discourse markers ONLY when comma-delimited, i.e. unambiguously parenthetical:
+  // "It's, like, fine" / "I mean, sure" — never "I like coffee" or "what I mean".
+  /,\s*(?:like|you know|i mean|sort of|kind of|actually|basically)\s*,/gi,
+  /^(?:well|so|you know|i mean),\s*/gi,
 ];
 
-// Word stuttering regex (e.g. "내가 내가" -> "내가", "I I" -> "I")
-const STUTTER_KOREAN = /\b([가-힣a-zA-Z0-9]+)\s+\1\b/gi;
+/**
+ * Collapse an immediately repeated word: "내가 내가 가볼게" -> "내가 가볼게".
+ * Uses Unicode property escapes because JS `\b` is ASCII-only and never matched
+ * Hangul, so the old rule silently did nothing for Korean.
+ */
+const STUTTER = /(^|[\s,.!?])(\p{L}[\p{L}\p{N}]*)(?:\s+\2)+(?=[\s,.!?]|$)/gu;
 
 /**
  * Filter disfluencies, filler words, and stammers from spoken text
@@ -25,13 +54,17 @@ export function removeDisfluencies(text: string): { cleanedText: string; removed
   let cleaned = text;
   let removedCount = 0;
 
-  // 1. Remove speech stutters ("내가 내가 가볼게" -> "내가 가볼게")
-  while (STUTTER_KOREAN.test(cleaned)) {
-    cleaned = cleaned.replace(STUTTER_KOREAN, '$1');
+  // 1. Collapse stutters, repeatedly (a triple repeat needs two passes).
+  //    Bounded loop: the old `while (regex.test(...))` misfired because a /g
+  //    regex carries lastIndex between .test() calls.
+  for (let pass = 0; pass < 3; pass++) {
+    const next = cleaned.replace(STUTTER, '$1$2');
+    if (next === cleaned) break;
     removedCount++;
+    cleaned = next;
   }
 
-  // 2. Process Korean fillers
+  // 2. Korean hesitation sounds
   for (const regex of KOREAN_FILLERS) {
     const matches = cleaned.match(regex);
     if (matches) {
@@ -40,18 +73,28 @@ export function removeDisfluencies(text: string): { cleanedText: string; removed
     }
   }
 
-  // 3. Process English fillers
+  // 3. English hesitation sounds & parenthetical discourse markers
   for (const regex of ENGLISH_FILLERS) {
     const matches = cleaned.match(regex);
     if (matches) {
       removedCount += matches.length;
-      cleaned = cleaned.replace(regex, ' ');
+      cleaned = cleaned.replace(regex, regex.source.startsWith(',') ? ', ' : ' ');
     }
   }
 
-  // 4. Clean up duplicate spaces and trim
-  cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
+  // 4. Tidy whitespace and stray punctuation left behind
+  cleaned = cleaned
+    .replace(/\s+([,.!?])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 
+  // An utterance that is nothing but hesitation carries no meaning: return empty
+  // so the caller skips the translation round-trip entirely.
+  if (new RegExp(`^(?:${KOREAN_HESITATION}|u+m+|u+h+|hm+|a+h+|e+r+m?)[\\s.,…]*$`, 'i').test(cleaned)) {
+    return { cleanedText: '', removedCount: removedCount + 1 };
+  }
+
+  // Otherwise never hand an empty string downstream — fall back to the raw utterance.
   return {
     cleanedText: cleaned.length > 0 ? cleaned : text.trim(),
     removedCount,
@@ -105,18 +148,35 @@ export const KOREAN_IDIOM_MAP: Array<{ pattern: RegExp; replacement: string; hin
 export function applyGlossaryToText(text: string, glossary: GlossaryItem[]): string {
   if (!text || glossary.length === 0) return text;
 
+  // Longest term first, so "Read the room" wins over a "room" entry.
+  const entries = [...glossary]
+    .filter(item => item.sourceTerm && item.targetTerm)
+    .sort((a, b) => b.sourceTerm.length - a.sourceTerm.length);
+
   let result = text;
-  for (const item of glossary) {
-    if (!item.sourceTerm || !item.targetTerm) continue;
-    
+  for (const item of entries) {
     try {
-      const regex = new RegExp(`\\b${escapeRegExp(item.sourceTerm)}\\b`, 'gi');
-      result = result.replace(regex, item.targetTerm);
+      result = result.replace(buildTermPattern(item.sourceTerm), item.targetTerm);
     } catch {
       result = result.split(item.sourceTerm).join(item.targetTerm);
     }
   }
   return result;
+}
+
+/**
+ * Match a glossary term on its own, not inside a longer word.
+ *
+ * JS `\b` is defined over ASCII `\w`, so `\b눈치\b` never matched anything —
+ * every Korean, Japanese or Chinese glossary entry was silently inert. These
+ * lookarounds use Unicode letter/number classes instead, which behave correctly
+ * for Hangul and CJK as well as Latin.
+ */
+function buildTermPattern(term: string): RegExp {
+  return new RegExp(
+    `(?<![\\p{L}\\p{N}])${escapeRegExp(term)}(?![\\p{L}\\p{N}])`,
+    'giu',
+  );
 }
 
 function escapeRegExp(string: string) {

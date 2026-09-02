@@ -83,17 +83,45 @@ export const TRANSLATION_MODES: ModeConfig[] = [
   },
 ];
 
-export const KOREAN_FILLER_WORDS = [
-  '어...', '음...', '그...', '저기...', '막...', '이제...', '그러니까...', '약간...', '아...',
-  '어 ', '음 ', '그 ', '저기 ', '막 ', '이제 ', '그러니까 ', '약간 ', '아 '
-];
-
-export const ENGLISH_FILLER_WORDS = [
-  'um', 'uh', 'er', 'ah', 'like', 'you know', 'I mean', 'sort of', 'kind of', 'basically', 'actually'
+/** Selectable translation engines, in the order the settings screen shows them. */
+export const ENGINE_OPTIONS: Array<{
+  id: AppSettings['engine'];
+  name: string;
+  badge: string;
+  badgeTone: 'emerald' | 'indigo' | 'amber';
+  description: string;
+}> = [
+  {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    badge: '추천',
+    badgeTone: 'emerald',
+    description: '문맥·뉘앙스 품질이 가장 좋습니다. 무료 API 키 필요.',
+  },
+  {
+    id: 'gemini-2.5-flash-lite',
+    name: 'Gemini 2.5 Flash-Lite',
+    badge: '가장 빠름',
+    badgeTone: 'indigo',
+    description: '지연이 더 짧고 저렴합니다. 긴 발표·회의에 유리합니다.',
+  },
+  {
+    id: 'gpt-4o-mini',
+    name: 'GPT-4o mini',
+    badge: 'OpenAI',
+    badgeTone: 'indigo',
+    description: 'OpenAI API 키를 이미 쓰고 계신 경우.',
+  },
+  {
+    id: 'smart-local',
+    name: '내장 엔진',
+    badge: '키 불필요',
+    badgeTone: 'amber',
+    description: '키 없이 바로 쓸 수 있지만 품질·속도가 보장되지 않습니다.',
+  },
 ];
 
 export const DEFAULT_GLOSSARY_ITEMS: GlossaryItem[] = [
-  { id: '1', sourceTerm: 'Antigravity', targetTerm: '안티그래비티', category: 'IT/AI', description: 'Google AI 에이전트 시스템' },
   { id: '2', sourceTerm: 'LLM', targetTerm: '거대언어모델 (LLM)', category: 'IT/AI', description: 'Large Language Model' },
   { id: '3', sourceTerm: 'STT', targetTerm: '음성인식 (Speech-to-Text)', category: '기술', description: '음성을 텍스트로 변환' },
   { id: '4', sourceTerm: 'Disfluency', targetTerm: '말버릇/비문 정제', category: '언어학', description: '군더더기 필러 워드' },
@@ -102,13 +130,21 @@ export const DEFAULT_GLOSSARY_ITEMS: GlossaryItem[] = [
   { id: '7', sourceTerm: 'Read the room', targetTerm: '분위기/눈치를 파악하다', category: '일상 관용구', description: '눈치 빠르게 행동하다' },
 ];
 
+/**
+ * Baked in at build time from VITE_PROXY_URL. With it set, a visitor gets a real
+ * AI engine without entering anything.
+ */
+export const BUILTIN_PROXY_URL = (import.meta.env.VITE_PROXY_URL ?? '').replace(/\/+$/, '');
+
 export const DEFAULT_SETTINGS: AppSettings = {
+  proxyUrl: BUILTIN_PROXY_URL,
   geminiApiKey: '',
   openaiApiKey: '',
-  engine: 'gemini-2.0-flash',
+  engine: 'gemini-2.5-flash',
   autoTts: true,
   ttsSpeed: 1.0,
   disfluencyFilter: true,
+  speculativeTranslation: true,
   fontSize: 'base',
   bilingualDisplay: true,
   highContrastSubtitles: true,

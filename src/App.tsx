@@ -1,4 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { AlertTriangle } from 'lucide-react';
+import { AudienceView } from './components/AudienceView';
 import { Header } from './components/Header';
 import { ModeSelector } from './components/ModeSelector';
 import { LivePresenter } from './components/LivePresenter';
@@ -20,17 +22,56 @@ import type {
 } from './types';
 import { 
   DEFAULT_GLOSSARY_ITEMS, 
-  DEFAULT_SETTINGS 
+  DEFAULT_SETTINGS,
+  ENGINE_OPTIONS,
 } from './constants';
 import { useSpeechRecognition } from './hooks/useSpeechRecognition';
-import { translationService } from './services/translator';
+import { isAbortError, translationService } from './services/translator';
+import { shouldSpeculate, speculationDelayMs } from './utils/interimGate';
+import { RoomChannel, createRoomId, isValidRoomId, readAudienceRoute } from './services/broadcast';
+import type { BroadcastMessage } from './services/broadcast';
 import { ttsService } from './services/tts';
 
+/** Floor on how often a speculative call may fire, in ms. */
+const MIN_SPECULATION_GAP_MS = 700;
+
+const ROOM_STORAGE_KEY = 'fluentlive_room_id';
+
+/** Minimum gap between mid-stream subtitle pushes to audience windows. */
+const SUBTITLE_STREAM_INTERVAL_MS = 150;
+
+/**
+ * `?view=audience&room=…` opens the read-only subtitle screen instead of the
+ * presenter app. Resolved once at module scope: a viewer never switches between
+ * the two roles within a single page load.
+ */
+const audienceRoute = readAudienceRoute();
+
 export function App() {
+  if (audienceRoute.isAudience && audienceRoute.roomId) {
+    return <AudienceView roomId={audienceRoute.roomId} initialLang={audienceRoute.lang} />;
+  }
+  return <PresenterApp />;
+}
+
+function PresenterApp() {
   // 1. Settings & Persistence State
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem('fluentlive_settings') || localStorage.getItem('polyvoice_settings');
-    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+    if (!saved) return DEFAULT_SETTINGS;
+    try {
+      // Merge over the defaults: a stored object written by an older build is
+      // missing every setting added since, and those would otherwise read as
+      // `undefined` (silently disabling the feature) for existing users.
+      const merged = { ...DEFAULT_SETTINGS, ...(JSON.parse(saved) as Partial<AppSettings>) };
+      // Retired model ids would now 404 on every request.
+      if (!ENGINE_OPTIONS.some(o => o.id === merged.engine)) {
+        merged.engine = DEFAULT_SETTINGS.engine;
+      }
+      return merged;
+    } catch {
+      return DEFAULT_SETTINGS;
+    }
   });
 
   const [glossary, setGlossary] = useState<GlossaryItem[]>(() => {
@@ -57,6 +98,53 @@ export function App() {
   const [currentInterimSource, setCurrentInterimSource] = useState('');
   const [currentStreamingTranslation, setCurrentStreamingTranslation] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
+  /** Set when a configured AI engine failed and the built-in one took over. */
+  const [engineNotice, setEngineNotice] = useState<string | null>(null);
+
+  // ★ P1: speculative ("provisional") translation of the interim transcript.
+  const [provisionalTranslation, setProvisionalTranslation] = useState('');
+
+  // ★ P0-5: cancel + sequence guard. Two utterances spoken back to back used to
+  // race on the same streaming state, so a slow earlier response could overwrite
+  // a newer translation.
+  const abortRef = useRef<AbortController | null>(null);
+  const requestSeqRef = useRef(0);
+
+  // Speculative pipeline — deliberately separate from the confirmed one so the
+  // two never abort each other by accident. A confirmed request always wins.
+  const specAbortRef = useRef<AbortController | null>(null);
+  const specSeqRef = useRef(0);
+  const specTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSpeculatedRef = useRef('');
+  const lastSpeculationAtRef = useRef(0);
+  const finalInFlightRef = useRef(false);
+
+  /** Drop any pending or in-flight speculation. */
+  const cancelSpeculation = useCallback(() => {
+    if (specTimerRef.current) {
+      clearTimeout(specTimerRef.current);
+      specTimerRef.current = null;
+    }
+    specSeqRef.current++;
+    specAbortRef.current?.abort();
+    specAbortRef.current = null;
+  }, []);
+
+  // Latest history without making the translate callback depend on `items`.
+  const itemsRef = useRef<TranslationItem[]>(items);
+
+  // Audience broadcast room. Persisted so a reload does not orphan open
+  // audience windows that are already listening on the old id.
+  const [roomId, setRoomId] = useState<string>(() => {
+    const saved = localStorage.getItem(ROOM_STORAGE_KEY);
+    if (isValidRoomId(saved)) return saved;
+    const fresh = createRoomId();
+    localStorage.setItem(ROOM_STORAGE_KEY, fresh);
+    return fresh;
+  });
+  const roomChannelRef = useRef<RoomChannel | null>(null);
+  const lastPublishAtRef = useRef(0);
 
   // Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -65,6 +153,10 @@ export function App() {
   const [isAudienceRoomOpen, setIsAudienceRoomOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [activeShadowingItem, setActiveShadowingItem] = useState<TranslationItem | null>(null);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   // Save to LocalStorage
   useEffect(() => {
@@ -83,15 +175,61 @@ export function App() {
     localStorage.setItem('fluentlive_history', JSON.stringify(items));
   }, [items]);
 
+  /**
+   * Push a subtitle line to any audience window listening on this room.
+   *
+   * `throttle` is used for mid-stream updates so the audience screen types along
+   * with the presenter instead of sitting blank until the sentence completes.
+   */
+  const publishSubtitle = useCallback((
+    payload: { sourceText: string; translatedText: string; isProvisional: boolean; throttle?: boolean },
+  ) => {
+    if (payload.throttle) {
+      const now = Date.now();
+      if (now - lastPublishAtRef.current < SUBTITLE_STREAM_INTERVAL_MS) return;
+      lastPublishAtRef.current = now;
+    } else {
+      lastPublishAtRef.current = Date.now();
+    }
+
+    const message: BroadcastMessage = {
+      kind: 'subtitle',
+      sourceText: payload.sourceText,
+      translatedText: payload.translatedText,
+      sourceLang,
+      targetLang,
+      mode: currentMode,
+      isProvisional: payload.isProvisional,
+      sentAt: Date.now(),
+    };
+    roomChannelRef.current?.post(message);
+  }, [sourceLang, targetLang, currentMode]);
+
   // Execute Translation Pipeline
   const handleTranslateText = useCallback(async (text: string) => {
     if (!text || text.trim() === '') return;
 
+    // Supersede any in-flight translation: abort its network stream and claim
+    // a new sequence number so late callbacks from the old one are ignored.
+    abortRef.current?.abort();
+    // A confirmed transcript supersedes any speculation about it.
+    finalInFlightRef.current = true;
+    cancelSpeculation();
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const seq = ++requestSeqRef.current;
+    const isCurrent = () => seq === requestSeqRef.current && !controller.signal.aborted;
+
     setIsTranslating(true);
-    setCurrentStreamingTranslation('');
+    setTranslationError(null);
+    setEngineNotice(null);
+    // Note: `currentStreamingTranslation` is NOT cleared here. The provisional
+    // text stays on screen until the confirmed translation produces its first
+    // token, so the panel never flashes empty.
 
     try {
-      const historyContext = items.slice(0, 3).map(i => ({
+      const historyContext = itemsRef.current.slice(0, 3).map(i => ({
         sourceText: i.sourceText,
         translatedText: i.translatedText,
       }));
@@ -104,10 +242,34 @@ export function App() {
         glossary,
         settings,
         history: historyContext,
+        signal: controller.signal,
         onChunk: (_chunk, accumulated) => {
+          if (!isCurrent()) return;
+          // First confirmed token — swap out of the provisional rendering.
+          setProvisionalTranslation('');
           setCurrentStreamingTranslation(accumulated);
+          publishSubtitle({
+            sourceText: text,
+            translatedText: accumulated,
+            isProvisional: true,
+            throttle: true,
+          });
         },
       });
+
+      if (!isCurrent()) return;
+
+      // A silently-degraded translation is worse than a visible error: the user
+      // keeps a wrong key or model configured and never learns why quality dropped.
+      if (result.fallbackReason) {
+        setEngineNotice(`${result.fallbackReason} 내장 엔진으로 번역했습니다.`);
+      }
+
+      if (!result.translatedText) {
+        setCurrentInterimSource('');
+        setProvisionalTranslation('');
+        return;
+      }
 
       const newItem: TranslationItem = {
         id: `trans_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -120,26 +282,129 @@ export function App() {
         targetLang,
         learningDetails: result.learningDetails,
         latencyMs: result.latencyMs,
+        ttftMs: result.ttftMs,
+        engineUsed: result.engineUsed,
         isBookmarked: false,
       };
 
       setItems(prev => [newItem, ...prev]);
       setCurrentInterimSource('');
+      setProvisionalTranslation('');
       setCurrentStreamingTranslation(result.translatedText);
 
-      // Auto-TTS if enabled
-      if (settings.autoTts && result.translatedText) {
+      publishSubtitle({
+        sourceText: result.cleanedSourceText || text,
+        translatedText: result.translatedText,
+        isProvisional: false,
+      });
+
+      // Auto-TTS — mute the mic while it plays so the app never transcribes
+      // its own output back into an endless translate-speak-translate loop.
+      if (settings.autoTts) {
         ttsService.speak(result.translatedText, {
           lang: targetLang,
           rate: settings.ttsSpeed || 1.0,
         });
       }
     } catch (err) {
+      if (isAbortError(err)) return; // superseded by a newer utterance
       console.error('Translation error:', err);
+      if (isCurrent()) {
+        setTranslationError('번역에 실패했습니다. 네트워크 상태 또는 설정의 API 키를 확인해 주세요.');
+      }
     } finally {
-      setIsTranslating(false);
+      if (seq === requestSeqRef.current) {
+        setIsTranslating(false);
+        finalInFlightRef.current = false;
+        lastSpeculatedRef.current = '';
+      }
     }
-  }, [sourceLang, targetLang, currentMode, glossary, settings, items]);
+  }, [sourceLang, targetLang, currentMode, glossary, settings, cancelSpeculation, publishSubtitle]);
+
+  /**
+   * ★ P1: translate the interim transcript ahead of the final result.
+   *
+   * The output is provisional — never written to history, never spoken, and
+   * replaced the moment the confirmed translation starts arriving.
+   */
+  const runSpeculativeTranslation = useCallback(async (text: string) => {
+    if (finalInFlightRef.current) return;
+
+    lastSpeculatedRef.current = text;
+    lastSpeculationAtRef.current = Date.now();
+
+    specAbortRef.current?.abort();
+    const controller = new AbortController();
+    specAbortRef.current = controller;
+    const seq = ++specSeqRef.current;
+    const isCurrent = () =>
+      seq === specSeqRef.current && !controller.signal.aborted && !finalInFlightRef.current;
+
+    try {
+      const result = await translationService.translate({
+        text,
+        sourceLang,
+        targetLang,
+        // Tutor mode returns a JSON blob that cannot stream and costs far more
+        // tokens; a speculative pass only needs the sentence itself.
+        mode: currentMode === 'tutor' ? 'daily' : currentMode,
+        glossary,
+        settings,
+        history: itemsRef.current.slice(0, 2).map(i => ({
+          sourceText: i.sourceText,
+          translatedText: i.translatedText,
+        })),
+        signal: controller.signal,
+        onChunk: (_chunk, accumulated) => {
+          if (!isCurrent()) return;
+          setProvisionalTranslation(accumulated);
+          publishSubtitle({
+            sourceText: text,
+            translatedText: accumulated,
+            isProvisional: true,
+            throttle: true,
+          });
+        },
+      });
+
+      if (isCurrent() && result.translatedText) {
+        setProvisionalTranslation(result.translatedText);
+        publishSubtitle({
+          sourceText: text,
+          translatedText: result.translatedText,
+          isProvisional: true,
+        });
+      }
+    } catch (err) {
+      // A speculation that fails or gets superseded is not worth surfacing —
+      // the confirmed translation is still on its way.
+      if (!isAbortError(err)) console.warn('Speculative translation failed:', err);
+    }
+  }, [sourceLang, targetLang, currentMode, glossary, settings, publishSubtitle]);
+
+  /** Debounced gate: decides whether this interim transcript is worth a call. */
+  const handleInterimTranscript = useCallback((interim: string) => {
+    setCurrentInterimSource(interim);
+
+    if (!settings.speculativeTranslation || finalInFlightRef.current) return;
+
+    if (specTimerRef.current) clearTimeout(specTimerRef.current);
+
+    if (!shouldSpeculate({ interim, lastSpeculated: lastSpeculatedRef.current })) return;
+
+    // Rate limit: never more than one speculative call per MIN_SPECULATION_GAP_MS.
+    const sinceLast = Date.now() - lastSpeculationAtRef.current;
+    const delay = Math.max(
+      speculationDelayMs(interim),
+      MIN_SPECULATION_GAP_MS - sinceLast,
+    );
+
+    const snapshot = interim;
+    specTimerRef.current = setTimeout(() => {
+      specTimerRef.current = null;
+      void runSpeculativeTranslation(snapshot);
+    }, delay);
+  }, [settings.speculativeTranslation, runSpeculativeTranslation]);
 
   // Web Speech STT Hook
   const {
@@ -147,15 +412,77 @@ export function App() {
     audioLevel,
     audioFrequencies,
     toggleListening,
+    isSupported,
+    errorMessage,
+    suspendListening,
+    resumeListening,
   } = useSpeechRecognition({
     lang: sourceLang,
-    onInterimTranscript: (interim) => {
-      setCurrentInterimSource(interim);
-    },
+    onInterimTranscript: handleInterimTranscript,
     onFinalTranscript: (finalText) => {
-      handleTranslateText(finalText);
+      void handleTranslateText(finalText);
     },
   });
+
+  // One channel per room, reopened when the room id changes.
+  useEffect(() => {
+    const channel = new RoomChannel(roomId);
+    roomChannelRef.current = channel;
+    return () => {
+      channel.post({ kind: 'presence', state: 'idle', sentAt: Date.now() });
+      channel.close();
+      roomChannelRef.current = null;
+    };
+  }, [roomId]);
+
+  // Tell audience windows whether the mic is actually running.
+  useEffect(() => {
+    roomChannelRef.current?.post({
+      kind: 'presence',
+      state: isListening ? 'live' : 'idle',
+      sentAt: Date.now(),
+    });
+  }, [isListening]);
+
+  /**
+   * The shadowing modal runs its own recogniser. Two live `SpeechRecognition`
+   * instances fight over the microphone in Chrome, so the presenter's session is
+   * suspended for the duration and resumed on close.
+   */
+  useEffect(() => {
+    if (activeShadowingItem) {
+      suspendListening();
+    } else {
+      resumeListening();
+    }
+  }, [activeShadowingItem, suspendListening, resumeListening]);
+
+  // Every TTS playback in the app — auto-TTS, the speed buttons, shadowing —
+  // mutes the mic through this single gate.
+  useEffect(() => {
+    ttsService.setPlaybackGate({ onStart: suspendListening, onEnd: resumeListening });
+    return () => ttsService.setPlaybackGate(null);
+  }, [suspendListening, resumeListening]);
+
+  // Abort any in-flight translation and silence TTS on unmount.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      cancelSpeculation();
+      ttsService.stop();
+    };
+  }, [cancelSpeculation]);
+
+  // Stopping the mic drops anything still pending. The provisional *text* is not
+  // cleared here — it is simply not rendered while the mic is off (see the
+  // `provisionalTranslation` prop below), which keeps this effect free of state
+  // updates and avoids a cascading render.
+  useEffect(() => {
+    if (!isListening) {
+      cancelSpeculation();
+      lastSpeculatedRef.current = '';
+    }
+  }, [isListening, cancelSpeculation]);
 
   // Language Swap
   const handleSwapLanguages = () => {
@@ -167,7 +494,8 @@ export function App() {
   // Sample testing
   const handleTestSample = (sampleText: string) => {
     setCurrentInterimSource(sampleText);
-    handleTranslateText(sampleText);
+    setProvisionalTranslation('');
+    void handleTranslateText(sampleText);
   };
 
   // Bookmark / Flashcard Handlers
@@ -217,7 +545,23 @@ export function App() {
       setItems([]);
       setCurrentInterimSource('');
       setCurrentStreamingTranslation('');
+      setProvisionalTranslation('');
     }
+  };
+
+  // Name the engine that produced the most recent translation, falling back to
+  // the configured one before anything has been translated.
+  const activeEngineLabel = (() => {
+    const lastEngine = items[0]?.engineUsed;
+    const id = lastEngine === 'builtin' ? 'smart-local' : (lastEngine ?? settings.engine);
+    const option = ENGINE_OPTIONS.find(o => o.id === id);
+    return option ? `번역 엔진: ${option.name}` : '번역 엔진: 내장 엔진';
+  })();
+
+  const handleRegenerateRoom = () => {
+    const fresh = createRoomId();
+    localStorage.setItem(ROOM_STORAGE_KEY, fresh);
+    setRoomId(fresh);
   };
 
   // Glossary Handlers
@@ -265,6 +609,53 @@ export function App() {
         savedCardsCount={savedCards.length}
       />
 
+      {/* ★ P0-6: surface STT / translation failures. These states existed in the
+          hook but were never rendered, so unsupported browsers and denied mic
+          permissions produced a button that silently did nothing. */}
+      {(!isSupported || errorMessage || translationError || engineNotice) && (
+        <div className="w-full max-w-7xl mx-auto px-4 pt-3">
+          <div
+            role="alert"
+            className={`flex items-start gap-2.5 rounded-2xl border px-4 py-3 text-sm ${
+              !isSupported || errorMessage
+                ? 'bg-rose-50 border-rose-200 text-rose-800'
+                : 'bg-amber-50 border-amber-200 text-amber-800'
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold">
+                {!isSupported
+                  ? '이 브라우저에서는 음성 인식을 사용할 수 없습니다'
+                  : errorMessage
+                    ? '음성 인식 오류'
+                    : translationError
+                      ? '번역 오류'
+                      : '번역 엔진 전환됨'}
+              </p>
+              <p className="mt-0.5 text-[13px] leading-relaxed opacity-90">
+                {!isSupported ? (
+                  <>
+                    데스크톱 <span className="font-semibold">Chrome</span> 또는{' '}
+                    <span className="font-semibold">Edge</span>에서 열어 주세요. 아래 샘플 문장 버튼으로 번역 기능은 그대로 테스트할 수 있습니다.
+                  </>
+                ) : (
+                  errorMessage || translationError || engineNotice
+                )}
+              </p>
+            </div>
+            {(translationError || engineNotice) && !errorMessage && isSupported && (
+              <button
+                onClick={() => { setTranslationError(null); setEngineNotice(null); }}
+                className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold hover:bg-amber-100 transition"
+              >
+                닫기
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-7xl mx-auto flex flex-col">
         {/* Mode Selector */}
@@ -281,6 +672,11 @@ export function App() {
           audioFrequencies={audioFrequencies}
           currentInterimSource={currentInterimSource}
           currentStreamingTranslation={currentStreamingTranslation}
+          provisionalTranslation={isListening ? provisionalTranslation : ''}
+          targetLang={targetLang}
+          fontSize={settings.fontSize}
+          bilingualDisplay={settings.bilingualDisplay}
+          highContrastSubtitles={settings.highContrastSubtitles}
           isTranslating={isTranslating}
           latestItem={items[0] || null}
           currentMode={currentMode}
@@ -307,7 +703,7 @@ export function App() {
           <span>•</span>
           <span>AI Real-Time Voice Translation & English Learning</span>
           <span>•</span>
-          <span>Powered by Gemini 2.0 Flash</span>
+          <span>{activeEngineLabel}</span>
         </p>
       </footer>
 
@@ -345,6 +741,9 @@ export function App() {
       <AudienceRoomModal
         isOpen={isAudienceRoomOpen}
         onClose={() => setIsAudienceRoomOpen(false)}
+        roomId={roomId}
+        isBroadcasting={isListening}
+        onRegenerateRoom={handleRegenerateRoom}
       />
 
       <ExportModal

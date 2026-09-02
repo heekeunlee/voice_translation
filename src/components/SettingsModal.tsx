@@ -8,9 +8,23 @@ import {
   Check, 
   ExternalLink, 
   ShieldCheck, 
-  Sparkles 
+  Sparkles,
+  Zap,
+  Monitor,
+  AlertTriangle
 } from 'lucide-react';
 import type { AppSettings } from '../types';
+import { ENGINE_OPTIONS } from '../constants';
+import { normalizeProxyUrl } from '../services/translator';
+
+const BADGE_TONE = {
+  emerald: 'bg-emerald-100 text-emerald-700',
+  indigo: 'bg-indigo-100 text-indigo-700',
+  amber: 'bg-amber-100 text-amber-800',
+} as const;
+
+const FONT_SIZE_LABEL = { sm: '작게', base: '보통', lg: '크게', xl: '아주 크게' } as const;
+const FONT_SIZE_PREVIEW = { sm: 'text-[10px]', base: 'text-xs', lg: 'text-sm', xl: 'text-base' } as const;
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -27,6 +41,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [formData, setFormData] = useState<AppSettings>(settings);
   const [isSaved, setIsSaved] = useState(false);
+
+  const usingProxy = normalizeProxyUrl(formData.proxyUrl).length > 0;
 
   if (!isOpen) return null;
 
@@ -61,7 +77,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
               환경 설정 및 AI 번역 엔진
             </h2>
-            <p className="text-xs text-gray-500">Gemini 2.0 Flash 스트리밍 및 음성 옵션을 설정하세요.</p>
+            <p className="text-xs text-gray-500">번역 엔진, 자막 표시, 음성 옵션을 설정하세요.</p>
           </div>
         </div>
 
@@ -75,42 +91,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               AI 번역 엔진 선택
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, engine: 'gemini-2.0-flash' })}
-                className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
-                  formData.engine === 'gemini-2.0-flash'
-                    ? 'bg-indigo-50 border-indigo-500 text-gray-900 shadow-xs'
-                    : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-indigo-600">Gemini 2.0 Flash</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">추천 엔진</span>
-                </div>
-                <p className="text-[11px] text-gray-500 mt-1">Google 차세대 초고속 멀티모달 번역</p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, engine: 'smart-local' })}
-                className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
-                  formData.engine === 'smart-local'
-                    ? 'bg-indigo-50 border-indigo-500 text-gray-900 shadow-xs'
-                    : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-indigo-600">스마트 로컬 엔진</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-semibold">무료 / No Key</span>
-                </div>
-                <p className="text-[11px] text-gray-500 mt-1">API 키 없이 즉시 브라우저에서 사용 가능</p>
-              </button>
+              {ENGINE_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, engine: option.id })}
+                  className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
+                    formData.engine === option.id
+                      ? 'bg-indigo-50 border-indigo-500 text-gray-900 shadow-xs'
+                      : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-indigo-600">{option.name}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 ${BADGE_TONE[option.badgeTone]}`}>
+                      {option.badge}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">{option.description}</p>
+                </button>
+              ))}
             </div>
+
+            {/* What the no-key path actually is. It was labelled a "local"
+                engine, which it is not. */}
+            {formData.engine === 'smart-local' && (
+              <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-[11px] leading-relaxed text-amber-900">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600" />
+                <span>
+                  내장 엔진은 브라우저에서 <span className="font-semibold">공개 번역 서비스를 직접 호출</span>합니다.
+                  기기 안에서만 도는 것이 아니며, 문서화되지 않은 경로라 응답이 수 초까지 느려지거나 차단될 수 있습니다.
+                  또한 <span className="font-semibold">번역 모드(문학·학술 등)와 학습 분석은 적용되지 않습니다</span> — 이 기능들은 AI 엔진에서만 동작합니다.
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Translation proxy — the recommended way to use an AI engine */}
+          <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200">
+            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              번역 프록시 (권장)
+            </label>
+            <p className="text-[11px] text-gray-500 mb-2">
+              API 키를 서버에 보관하는 중계 주소입니다. 설정하면 <span className="font-semibold">브라우저에 키를 저장하지 않고</span> AI 엔진을 쓸 수 있습니다.
+              직접 배포하는 방법은 저장소의 <code className="px-1 rounded bg-gray-200 font-mono">worker/README.md</code>에 있습니다.
+            </p>
+            <input
+              type="url"
+              inputMode="url"
+              placeholder="https://fluentlive-proxy.<계정>.workers.dev"
+              value={formData.proxyUrl}
+              onChange={(e) => setFormData({ ...formData, proxyUrl: e.target.value })}
+              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-800 placeholder-gray-400 outline-none focus:border-emerald-500 transition font-mono"
+            />
+            {usingProxy && (
+              <p className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                <Check className="w-3.5 h-3.5" />
+                프록시를 사용합니다 — 아래 API 키는 필요하지 않으며 전송되지 않습니다.
+              </p>
+            )}
           </div>
 
           {/* Gemini API Key */}
-          {formData.engine.startsWith('gemini') && (
+          {formData.engine.startsWith('gemini') && !usingProxy && (
             <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -129,14 +173,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
               <input
                 type="password"
-                placeholder="AIzaSy... (입력하지 않으면 스마트 로컬 엔진으로 자동 작동)"
+                placeholder="AIzaSy... (비워 두면 내장 엔진으로 작동)"
                 value={formData.geminiApiKey}
                 onChange={(e) => setFormData({ ...formData, geminiApiKey: e.target.value })}
                 className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-800 placeholder-gray-400 outline-none focus:border-indigo-500 transition font-mono"
               />
-              <p className="text-[11px] text-gray-500 mt-1.5 flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                API 키는 사용자의 로컬 브라우저에만 안전하게 보관됩니다.
+              <p className="text-[11px] text-amber-700 mt-1.5 flex items-start gap-1">
+                <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0 text-amber-600" />
+                <span>
+                  키는 이 브라우저에 저장되고 <span className="font-semibold">브라우저에서 직접 Google로 전송</span>됩니다.
+                  공용 PC에서는 사용하지 마시고, 가능하면 위의 번역 프록시를 쓰세요.
+                </span>
+              </p>
+            </div>
+          )}
+
+          {/* OpenAI API Key — the engine was selectable with no way to enter one. */}
+          {formData.engine === 'gpt-4o-mini' && !usingProxy && (
+            <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Key className="w-4 h-4 text-indigo-600" />
+                  OpenAI API Key
+                </label>
+                <a
+                  href="https://platform.openai.com/api-keys"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-indigo-600 hover:underline flex items-center gap-1"
+                >
+                  <span>키 발급받기</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              <input
+                type="password"
+                placeholder="sk-... (비워 두면 내장 엔진으로 작동)"
+                value={formData.openaiApiKey}
+                onChange={(e) => setFormData({ ...formData, openaiApiKey: e.target.value })}
+                className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-800 placeholder-gray-400 outline-none focus:border-indigo-500 transition font-mono"
+              />
+              <p className="text-[11px] text-amber-700 mt-1.5 flex items-start gap-1">
+                <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0 text-amber-600" />
+                <span>
+                  키는 이 브라우저에 저장되고 <span className="font-semibold">브라우저에서 직접 OpenAI로 전송</span>됩니다.
+                  가능하면 위의 번역 프록시를 쓰세요.
+                </span>
               </p>
             </div>
           )}
@@ -158,6 +240,83 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               onChange={(e) => setFormData({ ...formData, disfluencyFilter: e.target.checked })}
               className="w-5 h-5 rounded accent-indigo-600 cursor-pointer"
             />
+          </div>
+
+          {/* Speculative (interim) translation */}
+          <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 flex items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                <Zap className="w-4 h-4 text-amber-500" />
+                <span>선행 번역 (말하는 도중 미리 번역)</span>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                문장이 끝나기를 기다리지 않고 인식 중인 문장을 미리 번역해 &lsquo;잠정 번역&rsquo;으로 보여준 뒤, 발화가 끝나면 최종 번역으로 교체합니다. 체감 지연이 크게 줄지만 번역 호출 횟수가 늘어납니다.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={formData.speculativeTranslation}
+              onChange={(e) => setFormData({ ...formData, speculativeTranslation: e.target.checked })}
+              className="w-5 h-5 mt-0.5 rounded accent-indigo-600 cursor-pointer shrink-0"
+            />
+          </div>
+
+          {/* Conference screen display */}
+          <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-3">
+            <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+              <Monitor className="w-4 h-4 text-slate-600" />
+              <span>자막 화면 표시</span>
+            </div>
+
+            <div>
+              <p className="text-[11px] text-gray-500 mb-1.5">자막 글자 크기 (대화면·컨퍼런스용)</p>
+              <div className="grid grid-cols-4 gap-2">
+                {(['sm', 'base', 'lg', 'xl'] as const).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, fontSize: size })}
+                    className={`py-2 rounded-xl border font-bold transition ${
+                      formData.fontSize === size
+                        ? 'bg-indigo-600 text-white border-indigo-500'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                    } ${FONT_SIZE_PREVIEW[size]}`}
+                  >
+                    {FONT_SIZE_LABEL[size]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="flex items-start justify-between gap-3 cursor-pointer">
+              <div>
+                <div className="text-xs font-bold text-gray-800">원문 함께 보기 (Bilingual)</div>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  끄면 원문 인식 패널을 감추고 번역 자막이 화면 전체를 씁니다.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={formData.bilingualDisplay}
+                onChange={(e) => setFormData({ ...formData, bilingualDisplay: e.target.checked })}
+                className="w-5 h-5 mt-0.5 rounded accent-indigo-600 cursor-pointer shrink-0"
+              />
+            </label>
+
+            <label className="flex items-start justify-between gap-3 cursor-pointer">
+              <div>
+                <div className="text-xs font-bold text-gray-800">고대비 자막 (High Contrast)</div>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  어두운 배경에 흰 글씨로 표시합니다. 밝은 회의실이나 프로젝터에서 가독성이 좋습니다.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={formData.highContrastSubtitles}
+                onChange={(e) => setFormData({ ...formData, highContrastSubtitles: e.target.checked })}
+                className="w-5 h-5 mt-0.5 rounded accent-indigo-600 cursor-pointer shrink-0"
+              />
+            </label>
           </div>
 
           {/* Auto TTS & Speed */}
